@@ -1,0 +1,55 @@
+version: '3.8'
+services:
+  # Judge0 API
+  judge0:
+    image: judge0/judge0:latest
+    container_name: judge0
+    ports:
+      - "2358:2358"
+      - "5001:5000"
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0
+      - ENABLE_WAIT=false
+      - ENABLE_COMPILE=true
+      - ENABLE_DEBUGGING=false
+      - ENABLE_ISOLATE=true
+      - ENABLE_CGROUPS=false
+      - ENABLE_LOGGING=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - judge0-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:6-alpine
+    container_name: judge0-redis
+    networks:
+      - judge0-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:13-alpine
+    container_name: judge0-postgres
+    environment:
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0
+    volumes:
+      - judge0-postgres-data:/var/lib/postgresql/data
+    networks:
+      - judge0-network
+    restart: unless-stopped
+
+volumes:
+  judge0-postgres-data:
+
+networks:
+  judge0-network:
+    driver: bridge 
