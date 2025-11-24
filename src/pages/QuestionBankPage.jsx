@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Plus, 
   Search, 
@@ -95,6 +96,17 @@ const QuestionBankPage = () => {
 
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedQuestions, setSelectedQuestions] = useState(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [showBulkUploadDialog, setShowBulkUploadDialog] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [selectedQuestionType, setSelectedQuestionType] = useState('multiple_choice');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [uploadResults, setUploadResults] = useState(null);
   
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -134,7 +146,7 @@ const QuestionBankPage = () => {
       if (selectedSubcategory || showAllQuestions) {
         fetchQuestions();
       }
-    }, 300);
+    }, 150); // Reduced from 300ms for faster response
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, questionTypeFilter, difficultyFilter, categoryFilter, tagFilter, statusFilter, showAllQuestions, selectedSubcategory]);
@@ -224,6 +236,8 @@ const QuestionBankPage = () => {
         
         setQuestions(filteredQuestions);
         setTotalQuestions(response.data.pagination?.total || filteredQuestions.length);
+        // Clear selection when questions change
+        setSelectedQuestions(new Set());
       }
     } catch (error) {
       console.error('Error fetching questions:', error);
@@ -418,10 +432,10 @@ const QuestionBankPage = () => {
 
   const openEditDialog = async (question) => {
     try {
-      console.log('Opening edit dialog for question:', question);
+      // console.log('Opening edit dialog for question:', question);
       const response = await apiService.get(`/question-bank/questions/${question.id}`);
       if (response.success) {
-        console.log('Question data loaded:', response.data);
+        // console.log('Question data loaded:', response.data);
         setSelectedQuestion(response.data);
         setShowEditDialog(true);
       } else {
@@ -446,8 +460,18 @@ const QuestionBankPage = () => {
     try {
       const response = await apiService.get(`/question-bank/questions/${question.id}`);
       if (response.success) {
-        setSelectedQuestion(response.data);
-    setShowViewDialog(true);
+        // Ensure options are properly parsed if they're JSON strings
+        const questionData = response.data;
+        if (questionData.options && typeof questionData.options === 'string') {
+          try {
+            questionData.options = JSON.parse(questionData.options);
+          } catch (e) {
+            console.error('Error parsing options:', e);
+            questionData.options = [];
+          }
+        }
+        setSelectedQuestion(questionData);
+        setShowViewDialog(true);
       } else {
         toast({
           variant: "destructive",
@@ -468,6 +492,225 @@ const QuestionBankPage = () => {
   const openDeleteDialog = (question) => {
     setSelectedQuestion(question);
     setShowDeleteDialog(true);
+  };
+
+  // Bulk selection functions
+  const toggleQuestionSelection = (questionId) => {
+    setSelectedQuestions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(questionId)) {
+        newSet.delete(questionId);
+      } else {
+        newSet.add(questionId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedQuestions.size === questions.length) {
+      setSelectedQuestions(new Set());
+    } else {
+      setSelectedQuestions(new Set(questions.map(q => q.id)));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedQuestions(new Set());
+  };
+
+  // Bulk upload functions
+  const handleDownloadTemplate = async () => {
+    try {
+      await apiService.downloadQuestionTemplate(selectedQuestionType);
+      toast({
+        title: "Success",
+        description: "Template downloaded successfully"
+      });
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to download template"
+      });
+    }
+  };
+
+  const handlePreviewUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please select an Excel file to upload"
+      });
+      return;
+    }
+
+    try {
+      setPreviewLoading(true);
+      setPreviewData(null);
+      
+      const response = await apiService.previewBulkUploadQuestions(uploadFile, selectedQuestionType);
+      
+      setPreviewData(response.data);
+      setShowBulkUploadDialog(false);
+      setShowPreviewDialog(true);
+    } catch (error) {
+      console.error('Error in preview upload:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to parse Excel file"
+      });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "File not found"
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      setUploadResults(null);
+      
+      const response = await apiService.bulkUploadQuestions(uploadFile, selectedQuestionType);
+      
+      setUploadResults(response.data);
+      setShowPreviewDialog(false);
+      
+      if (response.data.success > 0) {
+        toast({
+          title: "Bulk Upload Complete",
+          description: `Successfully uploaded ${response.data.success} question${response.data.success > 1 ? 's' : ''}${response.data.failed > 0 ? `. ${response.data.failed} failed.` : ''}`
+        });
+        // Reset state after successful upload
+        setUploadFile(null);
+        setPreviewData(null);
+        
+        // Refresh categories and tags in case new ones were created
+        await Promise.all([
+          loadCategories(),
+          loadTags()
+        ]);
+        
+        // Reset to first page to see newly uploaded questions
+        setCurrentPage(1);
+        
+        // Always refresh questions list to show newly uploaded questions
+        // The useEffect watching currentPage will trigger fetchQuestions automatically
+        // But we also call it directly here to ensure immediate refresh
+        fetchQuestions();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Upload Failed",
+          description: "No questions were uploaded. Please check the errors."
+        });
+      }
+    } catch (error) {
+      console.error('Error in bulk upload:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to upload questions"
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const validTypes = [
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ];
+      
+      if (!validTypes.includes(file.type)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File Type",
+          description: "Please upload an Excel file (.xlsx or .xls)"
+        });
+        return;
+      }
+      
+      setUploadFile(file);
+    }
+  };
+
+  // Bulk delete function
+  const handleBulkDelete = async () => {
+    if (selectedQuestions.size === 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No questions selected for deletion"
+      });
+      return;
+    }
+
+    try {
+      setBulkDeleteLoading(true);
+      const questionIds = Array.from(selectedQuestions);
+      const results = [];
+      
+      // Delete questions one by one
+      for (const questionId of questionIds) {
+        try {
+          const response = await apiService.deleteQuestion(questionId);
+          if (response.success) {
+            results.push({ success: true, questionId });
+          } else {
+            results.push({ success: false, questionId, error: response.message || 'Failed to delete' });
+          }
+        } catch (error) {
+          results.push({ success: false, questionId, error: error.response?.data?.message || error.message || 'Unknown error' });
+        }
+      }
+
+      // Show results
+      const successCount = results.filter(r => r.success).length;
+      const errorCount = results.filter(r => !r.success).length;
+      
+      if (successCount > 0) {
+        toast({
+          title: "Bulk Delete Complete",
+          description: `Successfully deleted ${successCount} question${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. ${errorCount} error${errorCount > 1 ? 's' : ''} occurred.` : ''}`
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Bulk Delete Failed",
+          description: "Failed to delete any questions. Please check the console for details."
+        });
+      }
+
+      // Clear selection and refresh questions
+      setSelectedQuestions(new Set());
+      setShowBulkDeleteDialog(false);
+      fetchQuestions();
+      
+    } catch (error) {
+      console.error('Error in bulk delete:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to perform bulk delete operation"
+      });
+    } finally {
+      setBulkDeleteLoading(false);
+    }
   };
 
 
@@ -683,21 +926,8 @@ const QuestionBankPage = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Question Bank</h1>
-          <p className="text-muted-foreground">
-            Organize and manage your question library by categories
-          </p>
-        </div>
+      {/* Create Question Dialog */}
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Question
-            </Button>
-          </DialogTrigger>
           <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Question</DialogTitle>
@@ -708,7 +938,6 @@ const QuestionBankPage = () => {
             <QuestionCreationPage />
           </DialogContent>
         </Dialog>
-      </div>
 
       {/* Breadcrumb Navigation */}
       {categoryBreadcrumb.length > 0 && (
@@ -795,14 +1024,24 @@ const QuestionBankPage = () => {
             // Show main categories
             <Card>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>Question Categories</CardTitle>
-                    <CardDescription>
-                      Organize questions by categories and subcategories
-                    </CardDescription>
-                  </div>
-                  <Button onClick={() => setShowCreateCategory(true)} className="mt-4 sm:mt-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+                  <Dialog open={showBulkUploadDialog} onOpenChange={setShowBulkUploadDialog}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Bulk Upload
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                  <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create Question
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                  <Button onClick={() => setShowCreateCategory(true)} variant="outline">
                     <Plus className="mr-2 h-4 w-4" />
                     Create Category
                   </Button>
@@ -876,13 +1115,7 @@ const QuestionBankPage = () => {
             // Show subcategories of selected parent category
             <Card>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>Subcategories in {selectedParentCategory.name}</CardTitle>
-                    <CardDescription>
-                      Browse subcategories and their questions
-                    </CardDescription>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end">
                   <Button 
                     variant="outline" 
                     onClick={() => {
@@ -958,23 +1191,10 @@ const QuestionBankPage = () => {
             <div className="space-y-6">
               {/* Question Type Tabs with Search */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Questions in {selectedSubcategory.name}
-                  </CardTitle>
-                  <CardDescription>
-                    Browse and manage questions in this subcategory
-                    {questionTypeFilter !== 'all' && (
-                      <span className="ml-2 text-primary font-medium">
-                        • {getQuestionTypeGroupLabel(questionTypeFilter)}
-                      </span>
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Search Bar */}
-                  <div className="relative">
+                <CardContent className="space-y-4 pt-6">
+                  {/* Search Bar with Create Question and Delete Selected Buttons */}
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
                       placeholder="Search questions by title or content..."
@@ -982,6 +1202,33 @@ const QuestionBankPage = () => {
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
                     />
+                    </div>
+                    {selectedQuestions.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowBulkDeleteDialog(true)}
+                        disabled={bulkDeleteLoading}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Selected ({selectedQuestions.size})
+                      </Button>
+                    )}
+                    <Dialog open={showBulkUploadDialog} onOpenChange={setShowBulkUploadDialog}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Bulk Upload
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
+                    <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create Question
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
                   </div>
 
                   {/* Question Type Tabs */}
@@ -1070,6 +1317,12 @@ const QuestionBankPage = () => {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b bg-muted/50">
+                            <th className="text-center p-3 font-medium text-sm w-12">
+                              <Checkbox
+                                checked={questions.length > 0 && selectedQuestions.size === questions.length}
+                                onCheckedChange={toggleSelectAll}
+                              />
+                            </th>
                             <th className="text-left p-3 font-medium text-sm w-1/3">Question</th>
                             <th 
                               className="text-left p-3 font-medium text-sm cursor-pointer hover:bg-muted/70 transition-colors w-24"
@@ -1122,6 +1375,15 @@ const QuestionBankPage = () => {
                               key={question.id} 
                               className="border-b hover:bg-muted/20 transition-colors"
                             >
+                              <td className="p-3">
+                                <div className="flex items-center justify-center">
+                                  <Checkbox
+                                    checked={selectedQuestions.has(question.id)}
+                                    onCheckedChange={() => toggleQuestionSelection(question.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </div>
+                              </td>
                               <td className="p-3">
                                 <div className="max-w-xs">
                                   <div className="font-medium line-clamp-1 text-sm">
@@ -1257,13 +1519,7 @@ const QuestionBankPage = () => {
             // Show all subcategories
             <Card>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>All Subcategories</CardTitle>
-                    <CardDescription>
-                      Browse all subcategories across all main categories
-                    </CardDescription>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end">
                   <Button 
                     variant="outline" 
                     onClick={() => {
@@ -1363,23 +1619,10 @@ const QuestionBankPage = () => {
             <div className="space-y-6">
               {/* Question Type Tabs with Search */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Questions in {selectedSubcategory.name}
-                  </CardTitle>
-                  <CardDescription>
-                    Browse and manage questions in this subcategory
-                    {questionTypeFilter !== 'all' && (
-                      <span className="ml-2 text-primary font-medium">
-                        • {getQuestionTypeGroupLabel(questionTypeFilter)}
-                      </span>
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Search Bar */}
-                  <div className="relative">
+                <CardContent className="space-y-4 pt-6">
+                  {/* Search Bar with Create Question and Delete Selected Buttons */}
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
                       placeholder="Search questions by title or content..."
@@ -1387,6 +1630,33 @@ const QuestionBankPage = () => {
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
                     />
+                    </div>
+                    {selectedQuestions.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowBulkDeleteDialog(true)}
+                        disabled={bulkDeleteLoading}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Selected ({selectedQuestions.size})
+                      </Button>
+                    )}
+                    <Dialog open={showBulkUploadDialog} onOpenChange={setShowBulkUploadDialog}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Bulk Upload
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
+                    <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create Question
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
                   </div>
 
                   {/* Question Type Tabs */}
@@ -1475,6 +1745,12 @@ const QuestionBankPage = () => {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b bg-muted/50">
+                            <th className="text-center p-4 font-medium w-12">
+                              <Checkbox
+                                checked={questions.length > 0 && selectedQuestions.size === questions.length}
+                                onCheckedChange={toggleSelectAll}
+                              />
+                            </th>
                             <th className="text-left p-4 font-medium">Question</th>
                             <th 
                               className="text-left p-4 font-medium cursor-pointer hover:bg-muted/70 transition-colors"
@@ -1528,6 +1804,15 @@ const QuestionBankPage = () => {
                               className="border-b hover:bg-muted/30 cursor-pointer"
                               onClick={() => openViewDialog(question)}
                             >
+                              <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-center">
+                                  <Checkbox
+                                    checked={selectedQuestions.has(question.id)}
+                                    onCheckedChange={() => toggleQuestionSelection(question.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </div>
+                              </td>
                               <td className="p-4">
                                 <div className="max-w-xs">
                                   <div className="font-medium line-clamp-1">
@@ -1676,23 +1961,10 @@ const QuestionBankPage = () => {
 
           {/* Question Type Tabs with Search */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <FileText className="mr-2 h-4 w-4" />
-                All Questions
-              </CardTitle>
-              <CardDescription>
-                Browse and manage all questions by type
-                {questionTypeFilter !== 'all' && (
-                  <span className="ml-2 text-primary font-medium">
-                    • {getQuestionTypeGroupLabel(questionTypeFilter)}
-                  </span>
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Search Bar */}
-              <div className="relative">
+            <CardContent className="space-y-4 pt-6">
+              {/* Search Bar with Create Question and Delete Selected Buttons */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
                   placeholder="Search questions by title or content..."
@@ -1700,6 +1972,25 @@ const QuestionBankPage = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
+                </div>
+                {selectedQuestions.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => setShowBulkDeleteDialog(true)}
+                    disabled={bulkDeleteLoading}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Selected ({selectedQuestions.size})
+                  </Button>
+                )}
+                <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Question
+                    </Button>
+                  </DialogTrigger>
+                </Dialog>
               </div>
 
               {/* Question Type Tabs */}
@@ -1788,6 +2079,12 @@ const QuestionBankPage = () => {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-muted/50">
+                        <th className="text-center p-4 font-medium w-12">
+                          <Checkbox
+                            checked={questions.length > 0 && selectedQuestions.size === questions.length}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </th>
                         <th className="text-left p-4 font-medium">Question</th>
                         <th 
                           className="text-left p-4 font-medium cursor-pointer hover:bg-muted/70 transition-colors"
@@ -1841,6 +2138,15 @@ const QuestionBankPage = () => {
                           className="border-b hover:bg-muted/30 cursor-pointer"
                           onClick={() => openViewDialog(question)}
                         >
+                          <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center">
+                              <Checkbox
+                                checked={selectedQuestions.has(question.id)}
+                                onCheckedChange={() => toggleQuestionSelection(question.id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                          </td>
                           <td className="p-4">
                             <div className="max-w-xs">
                               <div className="font-medium line-clamp-1">
@@ -2362,16 +2668,26 @@ const QuestionBankPage = () => {
                       </p>
                     </div>
                     
-                    {selectedQuestion.options && (
+                    {selectedQuestion.options && Array.isArray(selectedQuestion.options) && selectedQuestion.options.length > 0 && (
                       <div>
                         <h3 className="font-semibold mb-2">Options</h3>
                         <div className="space-y-2">
-                          {selectedQuestion.options.map((option, index) => (
-                            <div key={index} className="flex items-center space-x-2 p-2 bg-muted/30 rounded">
-                              <span className="text-sm font-medium text-primary">{String.fromCharCode(65 + index)}.</span>
-                              <span className="text-sm">{option}</span>
-                            </div>
-                          ))}
+                          {selectedQuestion.options.map((option, index) => {
+                            // Handle both object format {label: 'A', text: '...'} and string format
+                            const optionText = typeof option === 'object' && option !== null 
+                              ? (option.text || option.label || '') 
+                              : (option || '');
+                            const optionLabel = typeof option === 'object' && option !== null 
+                              ? (option.label || String.fromCharCode(65 + index))
+                              : String.fromCharCode(65 + index);
+                            
+                            return (
+                              <div key={index} className="flex items-center space-x-2 p-2 bg-muted/30 rounded">
+                                <span className="text-sm font-medium text-primary">{optionLabel}.</span>
+                                <span className="text-sm">{optionText}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -2440,7 +2756,7 @@ const QuestionBankPage = () => {
               editMode={true}
               questionData={selectedQuestion}
               onSuccess={() => {
-                console.log('Question updated successfully');
+                // console.log('Question updated successfully');
                 setShowEditDialog(false);
                 setSelectedQuestion(null);
                 fetchQuestions();
@@ -2475,6 +2791,303 @@ const QuestionBankPage = () => {
               Delete
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Selected Questions</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedQuestions.size} question{selectedQuestions.size > 1 ? 's' : ''}? This action cannot be undone.
+              <br />
+              <span className="text-sm text-muted-foreground mt-2 block">
+                Note: Questions that are used in assessments cannot be deleted and will be skipped.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)} disabled={bulkDeleteLoading}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={bulkDeleteLoading}>
+              {bulkDeleteLoading ? 'Deleting...' : `Delete ${selectedQuestions.size} Question${selectedQuestions.size > 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={showBulkUploadDialog} onOpenChange={(open) => {
+        setShowBulkUploadDialog(open);
+        if (!open) {
+          setUploadFile(null);
+          setUploadResults(null);
+          setSelectedQuestionType('multiple_choice');
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Questions</DialogTitle>
+            <DialogDescription>
+              Upload multiple questions at once using an Excel template. Download the template first, fill it with your questions, then upload it here.
+              <br />
+              <span className="text-xs text-muted-foreground mt-2 block">
+                Note: Serial numbers are auto-generated. Title is only required for coding questions.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {/* Question Type Selection */}
+            <div className="space-y-2">
+              <Label>Question Type</Label>
+              <Select value={selectedQuestionType} onValueChange={setSelectedQuestionType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                  <SelectItem value="single_choice">Single Choice</SelectItem>
+                  <SelectItem value="true_false">True/False</SelectItem>
+                  <SelectItem value="short_answer">Short Answer</SelectItem>
+                  <SelectItem value="essay">Essay</SelectItem>
+                  <SelectItem value="coding">Coding</SelectItem>
+                  <SelectItem value="fill_blanks">Fill in the Blanks</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select the question type to download the appropriate template
+              </p>
+            </div>
+
+            {/* Download Template Button */}
+            <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={handleDownloadTemplate} className="flex-1">
+                <Download className="mr-2 h-4 w-4" />
+                Download Template
+              </Button>
+            </div>
+
+            {/* File Upload */}
+            <div className="space-y-2">
+              <Label>Upload Excel File</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileChange}
+                  className="flex-1"
+                />
+              </div>
+              {uploadFile && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <FileText className="h-4 w-4" />
+                  <span>{uploadFile.name}</span>
+                  <span className="text-xs">({(uploadFile.size / 1024).toFixed(2)} KB)</span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Upload the filled Excel template. Each row represents one question.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowBulkUploadDialog(false);
+              setUploadFile(null);
+              setPreviewData(null);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handlePreviewUpload} disabled={!uploadFile || previewLoading}>
+              {previewLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Parsing...
+                </>
+              ) : (
+                <>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Preview Questions
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview and Confirm Dialog */}
+      <Dialog open={showPreviewDialog} onOpenChange={(open) => {
+        setShowPreviewDialog(open);
+        if (!open) {
+          setPreviewData(null);
+          // Don't reset uploadFile here - keep it so user can go back and preview again
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
+            <DialogTitle>Preview Questions Before Upload</DialogTitle>
+            <DialogDescription>
+              Review the parsed questions below. Only valid questions will be uploaded. Invalid questions will be skipped.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {previewData && (
+            <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4">
+              {/* Summary */}
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Total Questions: {previewData.total}</p>
+                  <p className="text-sm text-green-600">Valid: {previewData.valid}</p>
+                  {previewData.invalid > 0 && (
+                    <p className="text-sm text-red-600">Invalid: {previewData.invalid}</p>
+                  )}
+                </div>
+                <Badge variant={previewData.invalid === 0 ? "default" : "destructive"}>
+                  {previewData.valid} / {previewData.total} valid
+                </Badge>
+              </div>
+
+              {/* Questions Preview */}
+              <div className="space-y-3">
+                {previewData.questions.map((question, index) => (
+                  <Card key={index} className={question.valid ? "border-green-200" : "border-red-200"}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-muted-foreground">
+                            Serial #{question.serialNumber} (Row {question.rowNumber})
+                          </span>
+                          {question.valid ? (
+                            <Badge variant="default" className="bg-green-100 text-green-800">Valid</Badge>
+                          ) : (
+                            <Badge variant="destructive">Invalid</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {question.errors.length > 0 && (
+                        <div className="p-2 bg-red-50 rounded text-sm">
+                          <p className="font-medium text-red-800 mb-1">Errors:</p>
+                          <ul className="list-disc list-inside text-red-600 space-y-1">
+                            {question.errors.map((error, errIndex) => (
+                              <li key={errIndex}>{error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="font-medium">Title:</span> {question.data.title || 'Auto-generated'}
+                        </div>
+                        <div>
+                          <span className="font-medium">Difficulty:</span> {question.data.difficulty}
+                        </div>
+                        <div>
+                          <span className="font-medium">Points:</span> {question.data.points}
+                        </div>
+                        <div>
+                          <span className="font-medium">Category:</span> {question.data.categoryName || 'None'}
+                        </div>
+                        {question.data.subcategoryName && (
+                          <div>
+                            <span className="font-medium">Subcategory:</span> {question.data.subcategoryName}
+                          </div>
+                        )}
+                        {question.data.tags && question.data.tags.length > 0 && (
+                          <div>
+                            <span className="font-medium">Tags:</span> {question.data.tags.join(', ')}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-2">
+                        <span className="font-medium text-sm">Content:</span>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                          {question.data.content}
+                        </p>
+                      </div>
+
+                      {/* Question Type Specific Preview */}
+                      {(selectedQuestionType === 'multiple_choice' || selectedQuestionType === 'single_choice') && question.data.options && (
+                        <div className="mt-2 space-y-1">
+                          <span className="font-medium text-sm">Options:</span>
+                          <div className="space-y-1">
+                            {question.data.options.map((opt, optIndex) => (
+                              <div key={optIndex} className="text-sm">
+                                <span className="font-medium">{opt.label}:</span> {opt.text}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-1">
+                            <span className="font-medium text-sm">Correct Answer: </span>
+                            {selectedQuestionType === 'single_choice' 
+                              ? question.data.correctAnswer 
+                              : question.data.correctAnswers?.join(', ')}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedQuestionType === 'true_false' && (
+                        <div className="mt-2">
+                          <span className="font-medium text-sm">Correct Answer: </span>
+                          {question.data.correctAnswer ? 'TRUE' : 'FALSE'}
+                        </div>
+                      )}
+
+                      {selectedQuestionType === 'short_answer' && question.data.correctAnswers && (
+                        <div className="mt-2">
+                          <span className="font-medium text-sm">Correct Answers: </span>
+                          {question.data.correctAnswers.join(', ')}
+                        </div>
+                      )}
+
+                      {selectedQuestionType === 'coding' && (
+                        <div className="mt-2 space-y-1 text-sm">
+                          <div><span className="font-medium">Language:</span> {question.data.language}</div>
+                          {question.data.testCases && (
+                            <div><span className="font-medium">Test Cases:</span> {question.data.testCases.length} test case(s)</div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
+            <Button variant="outline" onClick={() => {
+              setShowPreviewDialog(false);
+              setPreviewData(null);
+              setShowBulkUploadDialog(true);
+              // Keep uploadFile so user can preview again
+            }}>
+              Back
+            </Button>
+            <Button 
+              onClick={handleConfirmUpload} 
+              disabled={!previewData || previewData.valid === 0 || uploadLoading}
+            >
+              {uploadLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Confirm & Upload {previewData?.valid || 0} Question{previewData?.valid !== 1 ? 's' : ''}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

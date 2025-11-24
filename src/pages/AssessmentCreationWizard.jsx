@@ -96,6 +96,7 @@ export default function AssessmentCreationWizard() {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState(new Set());
   const [colleges, setColleges] = useState([]);
   const [selectedQuestions, setSelectedQuestions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -111,8 +112,7 @@ export default function AssessmentCreationWizard() {
   const [formData, setFormData] = useState({
     // Step 1: Basic Information
     title: '',
-    assessment_type: 'single_type', // 'single_type' or 'multi_type'
-    multi_type_structure: null, // 'section_based' or 'non_section_based' (only for multi_type)
+    // Assessment type removed - no longer needed
 
     selected_question_types: [], // Array of selected question types for multi-type assessments
     description: '',
@@ -306,7 +306,7 @@ export default function AssessmentCreationWizard() {
             description: '',
             instructions: '',
             time_limit_minutes: null,
-            allowed_question_types: [...QUESTION_TYPES.map(qt => qt.value)],
+            allowed_question_types: ['multiple_choice'],
             shuffle_questions: false,
             navigation_type: 'free',
             completion_requirement: 'all',
@@ -399,6 +399,7 @@ export default function AssessmentCreationWizard() {
           // Step 4: Proctoring
           require_proctoring: assessment.require_proctoring || false,
           proctoring_type: assessment.proctoring_settings?.proctoring_type || 'none',
+          max_tab_switches: assessment.proctoring_settings?.max_tab_switches ?? 0,
           
           // Basic Proctoring Features
           browser_lockdown: assessment.proctoring_settings?.browser_lockdown || false,
@@ -588,31 +589,10 @@ export default function AssessmentCreationWizard() {
           });
           return false;
         }
-        if (!formData.assessment_type) {
-          toast({
-            title: 'Validation Error',
-            description: 'Please select an assessment type',
-            variant: 'destructive'
-          });
-          return false;
-        }
-        if (formData.assessment_type === 'multi_type' && !formData.multi_type_structure) {
-          toast({
-            title: 'Validation Error',
-            description: 'Please select a multi-type structure',
-            variant: 'destructive'
-          });
-          return false;
-        }
+        // Assessment type validation removed
 
-        if (formData.assessment_type === 'multi_type' && (!formData.selected_question_types || formData.selected_question_types.length === 0)) {
-          toast({
-            title: 'Validation Error',
-            description: 'Please select at least one question type for your multi-type assessment',
-            variant: 'destructive'
-          });
-          return false;
-        }
+        // Removed validation for question type selection in multi-type assessments
+        // Users can now proceed without pre-selecting question types
         break;
       case 2:
         if (formData.time_limit_minutes <= 0) {
@@ -691,6 +671,9 @@ export default function AssessmentCreationWizard() {
 
   const nextStep = () => {
     if (validateStep(currentStep)) {
+      // Mark current step as completed
+      setCompletedSteps(prev => new Set([...prev, currentStep]));
+      
       const filteredSteps = getFilteredSteps();
       const currentIndex = filteredSteps.findIndex(step => step.id === currentStep);
       if (currentIndex < filteredSteps.length - 1) {
@@ -707,20 +690,34 @@ export default function AssessmentCreationWizard() {
     }
   };
 
+  const goToStep = (stepId) => {
+    // Allow navigation to any step that is completed or the next step
+    const filteredSteps = getFilteredSteps();
+    const targetIndex = filteredSteps.findIndex(step => step.id === stepId);
+    const currentIndex = filteredSteps.findIndex(step => step.id === currentStep);
+    
+    // Allow navigation to:
+    // 1. Any completed step
+    // 2. The next step (if current step is completed)
+    // 3. The current step
+    if (completedSteps.has(stepId) || 
+        (targetIndex === currentIndex + 1 && completedSteps.has(currentStep)) ||
+        targetIndex === currentIndex) {
+      setCurrentStep(stepId);
+    } else {
+      toast({
+        title: 'Navigation Restricted',
+        description: 'Please complete the current step before navigating to future steps',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const saveDraft = async () => {
     try {
       setSaving(true);
       
-      // Map assessment type to database enum values
-      let mappedAssessmentType = 'quiz'; // default
-      
-      if (formData.assessment_type === 'single_type') {
-        // For single type, use a default type
-        mappedAssessmentType = 'quiz';
-      } else if (formData.assessment_type === 'multi_type') {
-        // For multi type, use a default type that supports multiple question types
-        mappedAssessmentType = 'test'; // 'test' is more flexible for mixed content
-      }
+      // Assessment type removed - no longer needed
       
       // Prepare scheduling data
       const scheduling = {
@@ -799,7 +796,7 @@ export default function AssessmentCreationWizard() {
         title: formData.title,
         description: formData.description,
         instructions: formData.instructions,
-        assessment_type: mappedAssessmentType,
+        assessment_type: 'quiz', // Set default assessment type
         difficulty_level: mapDifficultyLevel(formData.difficulty_level),
         time_limit_minutes: formData.time_limit_minutes,
         total_points: calculateTotalPoints(),
@@ -856,16 +853,7 @@ export default function AssessmentCreationWizard() {
     try {
       setLoading(true);
       
-      // Map assessment type to database enum values
-      let mappedAssessmentType = 'quiz'; // default
-      
-      if (formData.assessment_type === 'single_type') {
-        // For single type, use a default type
-        mappedAssessmentType = 'quiz';
-      } else if (formData.assessment_type === 'multi_type') {
-        // For multi type, use a default type that supports multiple question types
-        mappedAssessmentType = 'test'; // 'test' is more flexible for mixed content
-      }
+      // Assessment type removed - no longer needed
       
       // Prepare scheduling data
       const scheduling = {
@@ -945,7 +933,7 @@ export default function AssessmentCreationWizard() {
         title: formData.title,
         description: formData.description,
         instructions: formData.instructions,
-        assessment_type: mappedAssessmentType,
+        assessment_type: 'quiz', // Set default assessment type
         difficulty_level: mapDifficultyLevel(formData.difficulty_level),
         time_limit_minutes: formData.time_limit_minutes,
         total_points: calculateTotalPoints(),
@@ -1044,7 +1032,7 @@ export default function AssessmentCreationWizard() {
   const createAssignmentsAndNotify = async (assessmentId) => {
     try {
       // Validate required scheduling data
-      if (!formData.start_date || !formData.start_time || !formData.end_date || !formData.end_time || !formData.assessment_timezone) {
+      if (!formData.start_date || !formData.start_time || !formData.end_date || !formData.end_time || !formData.timezone) {
         throw new Error('Missing required scheduling data for assignments');
       }
       
@@ -1065,7 +1053,7 @@ export default function AssessmentCreationWizard() {
           start_time_only: formData.start_time,
           end_date_only: formData.end_date,
           end_time_only: formData.end_time,
-          assessment_timezone: formData.assessment_timezone || 'UTC',
+          assessment_timezone: formData.timezone || 'UTC',
           early_access_hours: formData.early_access_hours || 0,
           late_submission_minutes: formData.late_submission_minutes || 0,
           password: formData.access_password || '',
@@ -1095,7 +1083,7 @@ export default function AssessmentCreationWizard() {
           start_time_only: formData.start_time,
           end_date_only: formData.end_date,
           end_time_only: formData.end_time,
-          assessment_timezone: formData.assessment_timezone || 'UTC',
+          assessment_timezone: formData.timezone || 'UTC',
           early_access_hours: formData.early_access_hours || 0,
           late_submission_minutes: formData.late_submission_minutes || 0,
           password: formData.access_password || '',
@@ -1123,7 +1111,7 @@ export default function AssessmentCreationWizard() {
           start_time_only: formData.start_time,
           end_date_only: formData.end_date,
           end_time_only: formData.end_time,
-          assessment_timezone: formData.assessment_timezone || 'UTC',
+          assessment_timezone: formData.timezone || 'UTC',
           early_access_hours: formData.early_access_hours || 0,
           late_submission_minutes: formData.late_submission_minutes || 0,
           password: formData.access_password || '',
@@ -1151,7 +1139,7 @@ export default function AssessmentCreationWizard() {
           start_time_only: formData.start_time,
           end_date_only: formData.end_date,
           end_time_only: formData.end_time,
-          assessment_timezone: formData.assessment_timezone || 'UTC',
+          assessment_timezone: formData.timezone || 'UTC',
           early_access_hours: formData.early_access_hours || 0,
           late_submission_minutes: formData.late_submission_minutes || 0,
           password: formData.access_password || '',
@@ -1199,7 +1187,13 @@ export default function AssessmentCreationWizard() {
       
       // Send email notifications for all assignments
       if (assignments.length > 0) {
-        await sendEmailNotifications(assessmentId, assignments);
+        // Send email notifications (optional - don't fail if no recipients)
+        try {
+          await sendEmailNotifications(assessmentId, assignments);
+        } catch (notificationError) {
+          console.warn('Notification sending failed, but assessment was created successfully:', notificationError);
+          // Don't throw error - assessment creation was successful
+        }
       }
       
     } catch (error) {
@@ -1209,8 +1203,12 @@ export default function AssessmentCreationWizard() {
 
   const sendEmailNotifications = async (assessmentId, assignments) => {
     try {
+      console.log('Sending notifications for assignments:', assignments);
+      
       // Send notifications for each assignment
       for (const assignment of assignments) {
+        console.log('Processing assignment:', assignment);
+        
         const notificationData = {
           assessment_id: assessmentId,
           assignment_id: assignment.id,
@@ -1219,7 +1217,7 @@ export default function AssessmentCreationWizard() {
           ],
           assessment_details: {
             title: formData.title,
-            type: formData.assessment_type,
+            type: 'assessment', // Default type since assessment_type was removed
             start_date: `${formData.start_date}T${formData.start_time}:00`,
             end_date: `${formData.end_date}T${formData.end_time}:00`,
             instructions: formData.instructions,
@@ -1228,16 +1226,21 @@ export default function AssessmentCreationWizard() {
           }
         };
         
+        console.log('Sending notification data:', notificationData);
+        
         // Call email notification endpoint
         const response = await apiService.post('/assessments/notifications/send', notificationData);
         
+        console.log('Notification response:', response);
+        
         // If there's a warning, log it but don't throw error
         if (response.warning) {
-          // Handle warning silently
+          console.log('Notification warning:', response.warning);
         }
       }
       
     } catch (error) {
+      console.error('Error sending notifications:', error);
       // Don't throw error here as the assessment was created successfully
       // The error will be handled by the main assessment creation flow
     }
@@ -1254,9 +1257,8 @@ export default function AssessmentCreationWizard() {
     ];
 
     // Add Section Management only for section-based multi-type assessments
-    if (formData.assessment_type === 'multi_type' && formData.multi_type_structure === 'section_based') {
-      baseSteps.push({ id: 6, title: 'Section Management', icon: FileText });
-    }
+    // Section Management step - always include for all assessments
+    baseSteps.push({ id: 6, title: 'Section Management', icon: FileText });
 
     // Add Question Selection and Review & Submit
     baseSteps.push(
@@ -1351,76 +1353,104 @@ export default function AssessmentCreationWizard() {
             {/* Desktop Progress Steps */}
             <div className="hidden md:flex items-center justify-center">
               <div className="flex items-center justify-center w-full max-w-6xl">
-                {getFilteredSteps().map((step, index) => (
-                  <div key={step.id} className="flex flex-col items-center relative flex-1">
-                    {/* Step Circle */}
-                    <div className={`flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 rounded-full border-2 flex-shrink-0 z-10 ${
-                      currentStep >= step.id 
-                        ? 'bg-blue-600 border-blue-600 text-white' 
-                        : 'bg-white border-gray-300 text-gray-500'
-                    }`}>
-                      {currentStep > step.id ? (
-                        <CheckSquare className="w-4 h-4 lg:w-5 lg:h-5" />
-                      ) : (
-                        <step.icon className="w-4 h-4 lg:w-5 lg:h-5" />
-                      )}
-                    </div>
+                {getFilteredSteps().map((step, index) => {
+                  const isCompleted = completedSteps.has(step.id);
+                  const isCurrent = currentStep === step.id;
+                  const canNavigate = isCompleted || isCurrent || (index === getFilteredSteps().findIndex(s => s.id === currentStep) + 1 && completedSteps.has(currentStep));
+                  
+                  return (
+                    <div key={step.id} className="flex flex-col items-center relative flex-1">
+                      {/* Step Circle */}
+                      <button
+                        onClick={() => canNavigate && goToStep(step.id)}
+                        disabled={!canNavigate}
+                        className={`flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 rounded-full border-2 flex-shrink-0 z-10 transition-all duration-200 ${
+                          isCurrent
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg'
+                            : isCompleted
+                            ? 'bg-green-600 border-green-600 text-white hover:bg-green-700 cursor-pointer'
+                            : canNavigate
+                            ? 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 cursor-pointer'
+                            : 'bg-white border-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <CheckSquare className="w-4 h-4 lg:w-5 lg:h-5" />
+                        ) : (
+                          <step.icon className="w-4 h-4 lg:w-5 lg:h-5" />
+                        )}
+                      </button>
                     
                     {/* Connector Line */}
                     {index < getFilteredSteps().length - 1 && (
                       <div className={`absolute top-4 lg:top-5 left-1/2 w-full h-0.5 ${
-                        currentStep > step.id ? 'bg-blue-600' : 'bg-gray-300'
+                        isCompleted ? 'bg-green-600' : 'bg-gray-300'
                       }`} />
                     )}
                     
-                    {/* Step Label */}
-                    <div className="mt-2 text-center w-full px-1">
-                      <span className={`text-xs lg:text-sm font-medium block leading-tight ${
-                        currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
+                    {/* Step Title */}
+                    <div className="mt-2 text-center">
+                      <div className={`text-xs lg:text-sm font-medium ${
+                        isCurrent ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-500'
                       }`}>
                         {step.title}
-                      </span>
+                      </div>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             </div>
             
             {/* Tablet Progress Steps */}
             <div className="hidden sm:flex md:hidden items-center justify-center">
               <div className="flex items-center justify-center w-full max-w-4xl">
-                {getFilteredSteps().map((step, index) => (
-                  <div key={step.id} className="flex flex-col items-center relative flex-1">
-                    {/* Step Circle */}
-                    <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 flex-shrink-0 z-10 ${
-                      currentStep >= step.id 
-                        ? 'bg-blue-600 border-blue-600 text-white' 
-                        : 'bg-white border-gray-300 text-gray-500'
-                    }`}>
-                      {currentStep > step.id ? (
-                        <CheckSquare className="w-3 h-3" />
-                      ) : (
-                        <step.icon className="w-3 h-3" />
-                      )}
-                    </div>
+                {getFilteredSteps().map((step, index) => {
+                  const isCompleted = completedSteps.has(step.id);
+                  const isCurrent = currentStep === step.id;
+                  const canNavigate = isCompleted || isCurrent || (index === getFilteredSteps().findIndex(s => s.id === currentStep) + 1 && completedSteps.has(currentStep));
+                  
+                  return (
+                    <div key={step.id} className="flex flex-col items-center relative flex-1">
+                      {/* Step Circle */}
+                      <button
+                        onClick={() => canNavigate && goToStep(step.id)}
+                        disabled={!canNavigate}
+                        className={`flex items-center justify-center w-7 h-7 rounded-full border-2 flex-shrink-0 z-10 transition-all duration-200 ${
+                          isCurrent
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg'
+                            : isCompleted
+                            ? 'bg-green-600 border-green-600 text-white hover:bg-green-700 cursor-pointer'
+                            : canNavigate
+                            ? 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 cursor-pointer'
+                            : 'bg-white border-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <CheckSquare className="w-3 h-3" />
+                        ) : (
+                          <step.icon className="w-3 h-3" />
+                        )}
+                      </button>
                     
                     {/* Connector Line */}
                     {index < getFilteredSteps().length - 1 && (
                       <div className={`absolute top-3.5 left-1/2 w-full h-0.5 ${
-                        currentStep > step.id ? 'bg-blue-600' : 'bg-gray-300'
+                        isCompleted ? 'bg-green-600' : 'bg-gray-300'
                       }`} />
                     )}
                     
-                    {/* Step Label */}
-                    <div className="mt-1 text-center w-full px-1">
-                      <span className={`text-xs font-medium block leading-tight ${
-                        currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
+                    {/* Step Title */}
+                    <div className="mt-1 text-center">
+                      <div className={`text-xs font-medium ${
+                        isCurrent ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-500'
                       }`}>
                         {step.title}
-                      </span>
+                      </div>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             </div>
             

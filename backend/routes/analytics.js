@@ -9,7 +9,6 @@ import {
   // New course analytics endpoints
   getCourseAnalyticsData,
   getFacultyForAnalytics,
-  getAssessmentTypes,
   getCourseCategories,
   // Save view functionality
   saveAnalyticsView,
@@ -24,14 +23,16 @@ import {
   getAssessmentStudentSubmissions
 } from '../controllers/analyticsController.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { validateCSRFToken } from '../middleware/csrf.js';
 
 const router = express.Router();
 
-// Apply authentication middleware to all routes
-router.use(authenticateToken);
-
-// Test connection
+// Test connection (no authentication required)
 router.get('/test', testAnalyticsConnection);
+
+
+// Apply authentication middleware to all other routes
+router.use(authenticateToken);
 
 // Assessment analytics
 router.get('/data', getAnalyticsData);
@@ -48,19 +49,37 @@ router.get('/colleges', getCollegesForAnalytics);
 router.get('/departments', getDepartmentsForAnalytics);
 router.get('/students', getStudentsForAnalytics);
 router.get('/faculty', getFacultyForAnalytics);
-router.get('/assessment-types', getAssessmentTypes);
+// Assessment types route removed since assessment_type column no longer exists
 router.get('/course-categories', getCourseCategories);
 
 // Export functionality
-router.post('/export', exportAnalyticsData);
+router.post('/export', validateCSRFToken, exportAnalyticsData);
+
+// MEDIUM FIX: Export progress tracking endpoint
+router.get('/export/progress/:exportId', async (req, res) => {
+  try {
+    const { exportId } = req.params;
+    const exportProgressService = (await import('../services/exportProgressService.js')).default;
+    const progress = exportProgressService.getProgress(exportId);
+    res.json({
+      success: true,
+      data: progress
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get export progress'
+    });
+  }
+});
 
 // Save view functionality
-router.post('/views', saveAnalyticsView);
+router.post('/views', validateCSRFToken, saveAnalyticsView);
 router.get('/views', getSavedAnalyticsViews);
 router.get('/views/:viewId', getSavedAnalyticsView);
 
 // Chart annotations
-router.post('/annotations', addChartAnnotation);
+router.post('/annotations', validateCSRFToken, addChartAnnotation);
 router.get('/annotations', getChartAnnotations);
 
 export default router; 

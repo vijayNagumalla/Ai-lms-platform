@@ -1,0 +1,148 @@
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\analyticsController.js[24m[0m
+[0m   [2m57:9[22m   [31merror[39m  'roleBasedFilter' is assigned a value but never used   [2mno-unused-vars[22m[0m
+[0m  [2m159:7[22m   [31merror[39m  'departmentFilter' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m167:7[22m   [31merror[39m  'studentFilter' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m  [2m921:21[22m  [31merror[39m  'filters' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\assessmentController.js[24m[0m
+[0m    [2m39:7[22m   [31merror[39m    'generateToken' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m    [2m48:7[22m   [31merror[39m    'evaluateCodingQuestion' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m   [2m834:16[22m  [31merror[39m    'existingAssignments' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m   [2m855:15[22m  [31merror[39m    'updateResult' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m   [2m869:16[22m  [31merror[39m    'updatedAssignments' is assigned a value but never used      [2mno-unused-vars[22m[0m
+[0m  [2m1110:7[22m   [31merror[39m    'section_id' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1113:7[22m   [31merror[39m    'time_limit_seconds' is assigned a value but never used      [2mno-unused-vars[22m[0m
+[0m  [2m1504:7[22m   [31merror[39m    'tags' is assigned a value but never used                    [2mno-unused-vars[22m[0m
+[0m  [2m1721:7[22m   [33mwarning[39m  Expected a default case                                      [2mdefault-case[22m[0m
+[0m  [2m2643:11[22m  [31merror[39m    'currentAttemptCount' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m  [2m2645:11[22m  [31merror[39m    'nextAttemptNumber' is assigned a value but never used       [2mno-unused-vars[22m[0m
+[0m  [2m2946:11[22m  [31merror[39m    'now' is assigned a value but never used                     [2mno-unused-vars[22m[0m
+[0m  [2m2994:53[22m  [31merror[39m    'started_at' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m2994:80[22m  [31merror[39m    'answers' is assigned a value but never used                 [2mno-unused-vars[22m[0m
+[0m  [2m4147:11[22m  [31merror[39m    'result' is assigned a value but never used                  [2mno-unused-vars[22m[0m
+[0m  [2m4156:12[22m  [31merror[39m    'rawResult' is assigned a value but never used               [2mno-unused-vars[22m[0m
+[0m  [2m4179:17[22m  [31merror[39m    'current_user_id' is assigned a value but never used         [2mno-unused-vars[22m[0m
+[0m  [2m4287:11[22m  [31merror[39m    'assessment' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m4446:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m  [2m4455:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\authController.js[24m[0m
+[0m  [2m117:12[22m  [31merror[39m  'result' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\bulkUploadController.js[24m[0m
+[0m  [2m441:9[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m442:13[22m  [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m443:7[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\codingController.js[24m[0m
+[0m  [2m193:5[22m   [31merror[39m  Unnecessary try/catch wrapper                  [2mno-useless-catch[22m[0m
+[0m  [2m195:15[22m  [31merror[39m  'filename' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m404:5[22m   [31merror[39m  Unnecessary try/catch wrapper                  [2mno-useless-catch[22m[0m
+[0m  [2m406:15[22m  [31merror[39m  'filename' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\codingProfileController.js[24m[0m
+[0m  [2m4:8[22m   [31merror[39m  'platformScraperService' is defined but never used  [2mno-unused-vars[22m[0m
+[0m  [2m7:10[22m  [31merror[39m  'authenticateToken' is defined but never used       [2mno-unused-vars[22m[0m
+[0m  [2m8:10[22m  [31merror[39m  'requireRole' is defined but never used             [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\collegeController.js[24m[0m
+[0m  [2m383:9[22m   [31merror[39m  'id' is not defined                          [2mno-undef[22m[0m
+[0m  [2m473:14[22m  [31merror[39m  'result' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\facultyAllocationController.js[24m[0m
+[0m  [2m330:11[22m  [31merror[39m  'project' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\projectManagementController.js[24m[0m
+[0m  [2m389:11[22m  [31merror[39m  'userId' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\questionBankController.js[24m[0m
+[0m    [2m74:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m   [2m430:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m   [2m547:5[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m   [2m588:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m592:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m597:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m598:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m624:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1036:7[22m   [31merror[39m    'acceptable_answers' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m1037:7[22m   [31merror[39m    'rubric' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1039:7[22m   [31merror[39m    'blanks' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1652:5[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m1851:9[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m1854:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1855:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1856:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1857:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1858:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1859:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1873:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1898:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1914:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1925:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1930:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1936:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1939:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1946:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1962:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1964:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1969:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1970:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1971:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1972:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1973:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m1985:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2238:9[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m2240:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2241:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2242:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2243:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2244:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2245:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2258:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2259:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2267:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2268:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2269:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2270:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2271:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2272:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2285:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2290:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2295:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2304:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2305:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2313:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2314:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2319:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2324:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2328:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2335:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2336:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2337:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2338:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2340:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2352:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2354:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2359:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2360:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2361:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2362:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2363:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m  [2m2375:13[22m  [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\reportsController.js[24m[0m
+[0m  [2m175:11[22m  [31merror[39m  'userId' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\superAdminController.js[24m[0m
+[0m  [2m2:8[22m  [31merror[39m  'bcrypt' is defined but never used  [2mno-unused-vars[22m[0m
+[0m  [2m3:8[22m  [31merror[39m  'jwt' is defined but never used     [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\userManagementController.js[24m[0m
+[0m  [2m338:9[22m   [31merror[39m  'faculty_type' is constant                 [2mno-const-assign[22m[0m
+[0m  [2m341:9[22m   [31merror[39m  'faculty_status' is constant               [2mno-const-assign[22m[0m
+[0m  [2m344:9[22m   [31merror[39m  'payment_type' is constant                 [2mno-const-assign[22m[0m
+[0m  [2m765:11[22m  [31merror[39m  'user' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[31m[1m✖ 119 problems (114 errors, 5 warnings)[22m[39m[0m
+[0m[31m[1m[22m[39m[0m

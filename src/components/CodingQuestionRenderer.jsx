@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,7 +58,8 @@ const CodingQuestionRenderer = ({
   onSave = () => {},
   lastSaved = null,
   isSaving = false,
-  clearStoredData = false
+  clearStoredData = false,
+  isDarkTheme = false
 }) => {
 
   const [selectedLanguage, setSelectedLanguage] = useState('javascript');
@@ -73,7 +75,6 @@ const CodingQuestionRenderer = ({
   const [supportedLanguages, setSupportedLanguages] = useState([]);
   
   // New state for modern UI
-  const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -89,16 +90,56 @@ const CodingQuestionRenderer = ({
   const [submissionStatus, setSubmissionStatus] = useState(null); // 'correct', 'incorrect', null
 
   const codingDetails = question.metadata || question.coding_details || {};
-  const languages = codingDetails.languages || ['javascript'];
+  
+  // Debug logging for coding question data
+  console.log('Coding Question Data:', {
+    question: question,
+    metadata: question.metadata,
+    coding_details: question.coding_details,
+    codingDetails: codingDetails
+  });
+  
+  // Parse languages array safely
+  let languages = ['javascript']; // Default fallback
+  try {
+    if (codingDetails.languages) {
+      if (Array.isArray(codingDetails.languages)) {
+        languages = codingDetails.languages;
+      } else if (typeof codingDetails.languages === 'string') {
+        languages = JSON.parse(codingDetails.languages);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse languages:', e.message);
+    languages = ['javascript'];
+  }
+  
   const starterCodes = codingDetails.starter_codes || {};
   const solutionCodes = codingDetails.solution_codes || {};
   
   // Try multiple possible locations for test cases
-  const testCases = codingDetails.test_cases || 
-                   codingDetails.testCases || 
-                   question.test_cases || 
-                   question.testCases || 
-                   [];
+  let testCases = [];
+  try {
+    testCases = codingDetails.test_cases || 
+                codingDetails.testCases || 
+                question.test_cases || 
+                question.testCases || 
+                [];
+    
+    // If test_cases is a string, try to parse it
+    if (typeof testCases === 'string') {
+      testCases = JSON.parse(testCases);
+    }
+    
+    // Ensure it's an array
+    if (!Array.isArray(testCases)) {
+      testCases = [];
+    }
+  } catch (e) {
+    console.warn('Failed to parse test cases:', e.message);
+    testCases = [];
+  }
+  
   const openTestCases = testCases.filter(testCase => !testCase.hidden);
   
   // Validate that test cases have required fields
@@ -149,7 +190,7 @@ const CodingQuestionRenderer = ({
   // Clear stored data when clearStoredData prop is true (for retakes)
   useEffect(() => {
     if (clearStoredData) {
-      console.log('Clearing stored test results and data for retake');
+      // console.log('Clearing stored test results and data for retake');
       setQuestionTestResults(new Map());
       setQuestionTestCaseStatuses(new Map());
       setQuestionSubmissionStatuses(new Map());
@@ -525,78 +566,15 @@ const CodingQuestionRenderer = ({
     return langInfo ? langInfo.name : getLanguageName(lang);
   };
 
+  // Alias for runBatchTestCases to match the button onClick
+  const runTests = runBatchTestCases;
+  const runCustomTest = runCustomCode;
+
   return (
     <div className={`${isDarkTheme ? 'dark' : ''} flex h-full w-full`}>
-      {/* Sidebar for Question Navigation */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300 ${isDarkTheme ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-r flex-shrink-0`}>
-        <div className="p-4 h-full">
-          <div className="flex items-center justify-between mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2"
-            >
-              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <List className="h-4 w-4" />}
-            </Button>
-            {!sidebarCollapsed && (
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-sm">Questions</span>
-              </div>
-            )}
-          </div>
-          
-          {!sidebarCollapsed ? (
-            <div className="space-y-4">
-              {/* Questions List */}
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {questions.map((q, index) => (
-                  <Button
-                    key={q.id}
-                    variant={index === currentQuestionIndex ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => onQuestionChange(index)}
-                    className="w-full justify-start text-left h-auto p-3"
-                  >
-                    <div className="flex items-start space-x-3 w-full">
-                      <Badge variant={index === currentQuestionIndex ? "secondary" : "outline"} className="text-xs">
-                        {index + 1}
-                      </Badge>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">
-                          {q.title || `Question ${index + 1}`}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {q.question_type === 'coding' ? 'Coding' : 'MCQ'} • {q.points || 10} pts
-                        </div>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {questions.map((q, index) => (
-                <Button
-                  key={q.id}
-                  variant={index === currentQuestionIndex ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => onQuestionChange(index)}
-                  className="w-full h-10 p-1 text-xs"
-                >
-                  {index + 1}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full p-2 space-y-4 overflow-y-auto">
+      {/* Middle Panel - Question Description and Test Cases */}
+      <div className="w-1/2 border-r overflow-hidden">
+        <div className="h-full p-4 overflow-y-auto">
 
           {/* Problem Description with Title and Points */}
           <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
@@ -627,7 +605,9 @@ const CodingQuestionRenderer = ({
             </CardHeader>
               <CardContent>
                 <div className="prose prose-sm max-w-none mb-6">
-                  <div dangerouslySetInnerHTML={{ __html: question.question_text }} />
+                  <div dangerouslySetInnerHTML={{ 
+                    __html: DOMPurify.sanitize(question.question_text || question.content || question.title || 'No question content available')
+                  }} />
                 </div>
 
                 {/* Question Completion Status */}
@@ -746,118 +726,204 @@ const CodingQuestionRenderer = ({
                 )}
               </CardContent>
             </Card>
+        </div>
+      </div>
 
-            {/* Code Editor */}
-            <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center space-x-2">
-                    <Code className="h-5 w-5" />
-                    <span>Code Editor</span>
-                  </CardTitle>
-                  <div className="flex items-center space-x-4">
-                    {/* Language Selection */}
-                    <div className="flex items-center space-x-2">
-                      <Label className="text-sm font-medium">Language:</Label>
-                      {languages.length > 1 ? (
-                        <select
-                          value={getCurrentLanguage()}
-                          onChange={(e) => handleLanguageChange(e.target.value)}
-                          className={`px-3 py-1 border rounded-md text-sm ${isDarkTheme ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                          disabled={isReadOnly}
-                        >
-                          {languages.map(lang => (
-                            <option key={lang} value={lang}>
-                              {getLanguageIcon(lang)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <Badge variant="outline" className="flex items-center space-x-1">
-                          <LanguageIcon language={getCurrentLanguage()} size="sm" showText={true} />
-                        </Badge>
-                      )}
-                    </div>
-                    
-                    {/* Font Size Controls */}
-                    <div className="flex items-center space-x-2">
-                      <Label className="text-sm font-medium">Font:</Label>
-                      <div className="flex items-center space-x-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setFontSize(Math.max(10, fontSize - 2))}
-                          disabled={isReadOnly || fontSize <= 10}
-                          className="p-1 h-7 w-7"
-                        >
-                          <span className="text-xs">A-</span>
-                        </Button>
-                        <span className="text-xs font-medium w-8 text-center">{fontSize}</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setFontSize(Math.min(24, fontSize + 2))}
-                          disabled={isReadOnly || fontSize >= 24}
-                          className="p-1 h-7 w-7"
-                        >
-                          <span className="text-xs">A+</span>
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={resetCode}
-                      disabled={isReadOnly}
-                    >
-                      <RotateCcw className="h-4 w-4 mr-2" />
-                      Reset
-                    </Button>
+      {/* Right Panel - Code Editor and Execution Controls */}
+      <div className="w-1/2 overflow-hidden">
+        <div className="h-full p-4 space-y-4 overflow-y-auto">
+          {/* Code Editor */}
+          <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <Code className="h-5 w-5" />
+                  <span>Code Editor</span>
+                </CardTitle>
+                <div className="flex items-center space-x-4">
+                  {/* Language Selection */}
+                  <div className="flex items-center space-x-2">
+                    <Label className="text-sm font-medium">Language:</Label>
+                    {languages.length > 1 ? (
+                      <select
+                        value={getCurrentLanguage()}
+                        onChange={(e) => handleLanguageChange(e.target.value)}
+                        className={`px-3 py-1 border rounded-md text-sm ${isDarkTheme ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                        disabled={isReadOnly}
+                      >
+                        {languages.map(lang => (
+                          <option key={lang} value={lang}>
+                            {getLanguageIcon(lang)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Badge variant="outline" className="flex items-center space-x-1">
+                        <LanguageIcon language={getCurrentLanguage()} size="sm" showText={true} />
+                      </Badge>
+                    )}
                   </div>
+                  
+                  {/* Font Size Controls */}
+                  <div className="flex items-center space-x-2">
+                    <Label className="text-sm font-medium">Font:</Label>
+                    <div className="flex items-center space-x-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFontSize(Math.max(10, fontSize - 2))}
+                        disabled={isReadOnly || fontSize <= 10}
+                        className="p-1 h-7 w-7"
+                      >
+                        <span className="text-xs">A-</span>
+                      </Button>
+                      <span className="text-xs font-medium w-8 text-center">{fontSize}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFontSize(Math.min(24, fontSize + 2))}
+                        disabled={isReadOnly || fontSize >= 24}
+                        className="p-1 h-7 w-7"
+                      >
+                        <span className="text-xs">A+</span>
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetCode}
+                    disabled={isReadOnly}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset
+                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <CodeEditor
-                  value={getCurrentCode()}
-                  onChange={handleCodeChange}
-                  language={getCurrentLanguage()}
-                  readOnly={isReadOnly}
-                  height="600px"
-                  options={{
-                    fontSize: fontSize,
-                    minimap: { enabled: fontSize >= 14 },
-                    wordWrap: 'on',
-                    lineNumbers: 'on',
-                    automaticLayout: true,
-                    theme: isDarkTheme ? 'vs-dark' : 'vs-light',
-                    scrollBeyondLastLine: false,
-                    renderWhitespace: 'selection',
-                    bracketPairColorization: { enabled: true }
-                  }}
-                />
-              </CardContent>
-            </Card>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CodeEditor
+                value={getCurrentCode()}
+                onChange={handleCodeChange}
+                language={getCurrentLanguage()}
+                readOnly={isReadOnly}
+                height="500px"
+                options={{
+                  fontSize: fontSize,
+                  minimap: { enabled: fontSize >= 14 },
+                  wordWrap: 'on',
+                  lineNumbers: 'on',
+                  automaticLayout: true,
+                  theme: isDarkTheme ? 'vs-dark' : 'vs-light',
+                  scrollBeyondLastLine: false,
+                  renderWhitespace: 'selection',
+                  bracketPairColorization: { enabled: true }
+                }}
+              />
+            </CardContent>
+          </Card>
 
-            {/* Custom Test Cases */}
-            <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
-              <Collapsible open={isCustomTestExpanded} onOpenChange={setIsCustomTestExpanded}>
-                <CollapsibleTrigger asChild>
-                  <CardHeader className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    <CardTitle className="text-lg flex items-center justify-between">
+          {/* Test Execution Controls */}
+          <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <TestTube className="h-5 w-5" />
+                <span>Test Execution</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Run Tests Button */}
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={runTests}
+                    disabled={isRunningTests || isReadOnly}
+                    className="flex-1"
+                    size="lg"
+                  >
+                    {isRunningTests ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Running Tests...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Run All Tests
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={onSave}
+                    disabled={isSaving || isReadOnly}
+                    size="lg"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Test Results Summary */}
+                {testResults && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Test Results:</span>
                       <div className="flex items-center space-x-2">
-                        <Terminal className="h-5 w-5" />
-                        <span>Custom Test Cases</span>
+                        <span className="text-sm text-green-600">
+                          ✓ {testResults.filter(r => r.result?.verdict?.status === 'accepted').length}
+                        </span>
+                        <span className="text-sm text-red-600">
+                          ✗ {testResults.filter(r => r.result?.verdict?.status !== 'accepted').length}
+                        </span>
                       </div>
-                      <div className="flex items-center">
-                        {isCustomTestExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    </div>
+                    <Progress 
+                      value={(testResults.filter(r => r.result?.verdict?.status === 'accepted').length / testResults.length) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+                )}
+
+                {/* Last Saved Status */}
+                {lastSaved && (
+                  <div className="text-xs text-gray-500">
+                    Last saved: {lastSaved.toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Custom Test Cases */}
+          <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
+            <Collapsible open={isCustomTestExpanded} onOpenChange={setIsCustomTestExpanded}>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Terminal className="h-5 w-5" />
+                      <span>Custom Test Cases</span>
+                    </div>
+                    <div className="flex items-center">
+                      {isCustomTestExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
                   <div className="space-y-4">
                     <div>
                       <Label htmlFor="custom-input" className="text-sm font-medium">Input:</Label>
@@ -865,314 +931,64 @@ const CodingQuestionRenderer = ({
                         id="custom-input"
                         value={customInput}
                         onChange={(e) => setCustomInput(e.target.value)}
-                        placeholder="Enter your test input here..."
-                        className={`mt-1 w-full p-3 border rounded-md font-mono text-sm ${isDarkTheme ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                        rows={8}
-                        disabled={isReadOnly || isCodeRunning}
+                        placeholder="Enter custom input..."
+                        className={`w-full h-20 p-3 border rounded-md resize-none ${isDarkTheme ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                        disabled={isReadOnly}
                       />
                     </div>
-                    
+                    <div>
+                      <Label htmlFor="custom-output" className="text-sm font-medium">Expected Output:</Label>
+                      <textarea
+                        id="custom-output"
+                        value={customOutput}
+                        onChange={(e) => setCustomOutput(e.target.value)}
+                        placeholder="Enter expected output..."
+                        className={`w-full h-20 p-3 border rounded-md resize-none ${isDarkTheme ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                        disabled={isReadOnly}
+                      />
+                    </div>
                     <Button
-                      onClick={runCustomCode}
-                      disabled={isRunningCustom || isReadOnly || isCodeRunning || !customInput.trim()}
-                      size="sm"
+                      onClick={runCustomTest}
+                      disabled={isRunningCustom || isReadOnly || !customInput.trim()}
                       className="w-full"
                     >
                       {isRunningCustom ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Running...
+                        </>
                       ) : (
-                        <Play className="h-4 w-4 mr-2" />
+                        <>
+                          <Play className="h-4 w-4 mr-2" />
+                          Run Custom Test
+                        </>
                       )}
-                      Run Custom Test
                     </Button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm font-medium">Output:</Label>
-                      <div className={`mt-1 p-3 border rounded-md font-mono text-sm min-h-[200px] max-h-[300px] overflow-y-auto ${isDarkTheme ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-300'}`}>
-                        {isRunningCustom ? (
-                          <div className="flex items-center space-x-2 text-blue-500">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span>Executing code...</span>
-                          </div>
-                        ) : (
-                          customOutput || 'Output will appear here after running your code'
-                        )}
-                      </div>
-                    </div>
                     
-                    {executionHistory.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <Label className="text-sm font-medium">Recent Executions</Label>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setExecutionHistory([])}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
+                    {/* Custom Test Result */}
+                    {customOutput && (
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 text-blue-600">
+                          <Terminal className="h-4 w-4" />
+                          <span className="font-medium text-sm">Custom Test Output</span>
                         </div>
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                          {executionHistory.slice(0, 3).map((exec) => (
-                            <div key={exec.id} className={`text-xs p-2 rounded ${isDarkTheme ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                              <div className="flex items-center justify-between">
-                                <span>{exec.timestamp.toLocaleTimeString()}</span>
-                                {exec.success ? (
-                                  <Check className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <X className="h-3 w-3 text-red-500" />
-                                )}
-                              </div>
-                            </div>
-                          ))}
+                        <div className="text-xs">
+                          <div className="font-medium">Output:</div>
+                          <pre className="whitespace-pre-wrap bg-gray-100 dark:bg-gray-800 p-2 rounded mt-1 text-xs">
+                            {customOutput}
+                          </pre>
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-
-            {/* Batch Test Verification */}
-            <Card className={isDarkTheme ? 'bg-gray-800 border-gray-700' : ''}>
-              <Collapsible open={isTestVerificationExpanded} onOpenChange={setIsTestVerificationExpanded}>
-                <CollapsibleTrigger asChild>
-                  <CardHeader className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <TestTube className="h-5 w-5" />
-                        <span className="text-lg font-semibold">Test Verification</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runBatchTestCases();
-                          }}
-                          disabled={isBatchRunning || isReadOnly || isCodeRunning}
-                          size="sm"
-                        >
-                          {isBatchRunning ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                          )}
-                          Run Tests
-                        </Button>
-                        {testResults && (
-                          <Button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearTestResults();
-                            }}
-                            variant="outline"
-                            size="sm"
-                          >
-                            <RotateCcw className="h-4 w-4 mr-2" />
-                            Clear
-                          </Button>
-                        )}
-                        {isTestVerificationExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      </div>
-                    </div>
-                  </CardHeader>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent>
-                {/* Test Cases List with Compact Status */}
-                {validTestCases.length > 0 && (
-                  <div className="space-y-2">
-                    {validTestCases.map((testCase, index) => {
-                      const status = testCaseStatuses.find(s => s.id === index);
-                      const hasError = status?.status === 'failed' || status?.result?.verdict?.status === 'failed' || status?.result?.verdict?.status === 'error' || status?.result?.error;
-                      
-                      return (
-                        <div key={index}>
-                          {/* Compact Status Display */}
-                          <div className={`p-3 border rounded-lg transition-colors ${
-                            status?.status === 'passed' ? 'border-green-300 bg-green-50' :
-                            status?.status === 'failed' ? 'border-red-300 bg-red-50' :
-                            status?.status === 'running' ? 'border-blue-300 bg-blue-50' :
-                            'border-gray-300 bg-gray-50'
-                          } ${isDarkTheme ? 'bg-opacity-10' : ''}`}>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <Badge variant="outline" className="text-sm">
-                                  Test Case {index + 1}
-                                </Badge>
-                                
-                                {/* Status Icon */}
-                                <div className="flex items-center space-x-1">
-                                  {status?.status === 'running' && (
-                                    <>
-                                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                                      <span className="text-sm font-medium text-blue-600">Running...</span>
-                                    </>
-                                  )}
-                                  {status?.status === 'passed' && (
-                                    <>
-                                      <CheckCircle className="h-4 w-4 text-green-600" />
-                                      <span className="text-sm font-medium text-green-600">Passed</span>
-                                    </>
-                                  )}
-                                  {status?.status === 'failed' && (
-                                    <>
-                                      <XCircle className="h-4 w-4 text-red-600" />
-                                      <span className="text-sm font-medium text-red-600">Failed</span>
-                                    </>
-                                  )}
-                                  {!status && (
-                                    <span className="text-sm text-gray-500">Not Run</span>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              {hasError && (
-                                <Badge variant="secondary" className="text-xs">
-                                  Error Details Below
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {/* Error Details (only shown for failed tests) */}
-                          {hasError && (
-                            <div className="mt-2 p-4 border border-red-200 rounded-lg bg-red-50 dark:bg-red-900/20">
-                              <div className="space-y-3">
-                                <div className="flex items-center space-x-2 mb-3">
-                                  <AlertCircle className="h-4 w-4 text-red-600" />
-                                  <span className="text-sm font-medium text-red-700">Test Case Failed</span>
-                                </div>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <Label className="font-medium text-red-700">Input:</Label>
-                                    <div className={`mt-1 p-2 rounded font-mono text-xs ${isDarkTheme ? 'bg-gray-700' : 'bg-white'} border`}>
-                                      {formatTestCaseData(testCase.input || testCase.input_data || testCase.inputData)}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <Label className="font-medium text-red-700">Expected Output:</Label>
-                                    <div className={`mt-1 p-2 rounded font-mono text-xs ${isDarkTheme ? 'bg-gray-700' : 'bg-white'} border`}>
-                                      {formatTestCaseData(testCase.expected_output || testCase.output || testCase.expected_result || testCase.expectedOutput)}
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                {/* Actual Output (if available) */}
-                                {status?.result?.result?.output && (
-                                  <div>
-                                    <Label className="font-medium text-red-700">Your Output:</Label>
-                                    <div className={`mt-1 p-2 rounded font-mono text-xs ${isDarkTheme ? 'bg-gray-700' : 'bg-white'} border`}>
-                                      {formatTestCaseData(status.result.result.output)}
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {/* Error Message (if available) */}
-                                {status?.result?.error && (
-                                  <div>
-                                    <Label className="font-medium text-red-700">Error:</Label>
-                                    <div className="mt-1 p-2 rounded bg-red-100 dark:bg-red-800/30 border border-red-200 text-xs text-red-800 dark:text-red-200">
-                                      {status.result.error}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Submission Status */}
-                {submissionStatus && (
-                  <div className="mt-4 p-4 border rounded-lg">
-                    <div className={`flex items-center space-x-3 p-4 rounded-lg ${
-                      submissionStatus === 'correct' 
-                        ? 'text-green-700 bg-green-50 border border-green-200' 
-                        : 'text-red-700 bg-red-50 border border-red-200'
-                    } ${isDarkTheme ? 'bg-opacity-10' : ''}`}>
-                      {submissionStatus === 'correct' ? (
-                        <>
-                          <CheckCircle className="h-6 w-6 text-green-600" />
-                          <div>
-                            <div className="font-semibold text-lg">✅ Question Complete!</div>
-                            <div className="text-sm">All test cases passed successfully. This question is now marked as complete.</div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="h-6 w-6 text-red-600" />
-                          <div>
-                            <div className="font-semibold text-lg">❌ Question Incomplete</div>
-                            <div className="text-sm">Some test cases failed. Please review your code and try again to complete this question.</div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Summary Results */}
-                {testResults && (
-                  <div className="mt-6 pt-4 border-t">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className={`p-3 rounded-lg text-center ${isDarkTheme ? 'bg-green-900/20 border border-green-700' : 'bg-green-50 border border-green-200'}`}>
-                        <div className="text-xl font-bold text-green-600">{testResults.summary.passed}</div>
-                        <div className="text-xs text-green-600">Passed</div>
-                      </div>
-                      <div className={`p-3 rounded-lg text-center ${isDarkTheme ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'}`}>
-                        <div className="text-xl font-bold text-red-600">{testResults.summary.failed}</div>
-                        <div className="text-xs text-red-600">Failed</div>
-                      </div>
-                      <div className={`p-3 rounded-lg text-center ${isDarkTheme ? 'bg-blue-900/20 border border-blue-700' : 'bg-blue-50 border border-blue-200'}`}>
-                        <div className="text-xl font-bold text-blue-600">{testResults.summary.percentage}%</div>
-                        <div className="text-xs text-blue-600">Success Rate</div>
-                      </div>
-                      <div className={`p-3 rounded-lg text-center ${isDarkTheme ? 'bg-gray-700 border border-gray-600' : 'bg-gray-50 border border-gray-200'}`}>
-                        <div className="text-xl font-bold">{testResults.summary.total}</div>
-                        <div className="text-xs">Total Tests</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Empty State */}
-                {validTestCases.length === 0 && (
-                  <div className="text-center text-gray-500 py-12">
-                    <TestTube className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg font-medium">No test cases available</p>
-                    <p className="text-sm">Test cases will appear here when available</p>
-                  </div>
-                )}
-
-                {/* Completion Guidance */}
-                {validTestCases.length > 0 && !submissionStatus && (
-                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <Info className="h-5 w-5 text-blue-600" />
-                      <div className="text-sm text-blue-800">
-                        <strong>To complete this question:</strong> Run the test cases and ensure all of them pass. 
-                        Only when all test cases pass will this question be marked as complete in your progress.
-                      </div>
-                    </div>
-                  </div>
-                )}
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
         </div>
       </div>
     </div>
   );
 };
 
-export default CodingQuestionRenderer; 
+export default CodingQuestionRenderer;

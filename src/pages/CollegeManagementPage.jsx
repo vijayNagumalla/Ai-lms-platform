@@ -832,9 +832,9 @@ const CollegeManagementPage = () => {
         
         // Log the error for debugging
         console.error('College deletion failed:', deleteError);
-        console.log('College details:', college);
-        console.log('Student count:', college.student_count);
-        console.log('Faculty count:', college.faculty_count);
+        // console.log('College details:', college);
+        // console.log('Student count:', college.student_count);
+        // console.log('Faculty count:', college.faculty_count);
       }
     } catch (error) {
       console.error('Error in cascading delete:', error);

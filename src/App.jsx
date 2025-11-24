@@ -1,14 +1,16 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import Layout from '@/components/Layout';
+import Header from '@/components/Header';
 import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
+import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import DashboardPage from '@/pages/DashboardPage';
-import SuperAdminDashboard from '@/pages/dashboards/SuperAdminDashboard';
 import CollegeAdminDashboard from '@/pages/dashboards/CollegeAdminDashboard';
-import FacultyDashboard from '@/pages/dashboards/FacultyDashboard';
-import StudentDashboard from '@/pages/dashboards/StudentDashboard';
+import EnhancedSuperAdminDashboard from '@/pages/dashboards/EnhancedSuperAdminDashboard';
+import EnhancedFacultyDashboard from '@/pages/dashboards/EnhancedFacultyDashboard';
+import EnhancedStudentDashboard from '@/pages/dashboards/EnhancedStudentDashboard';
 
 import CollegeManagementPage from '@/pages/CollegeManagementPage';
 import UserProfilePage from '@/pages/UserProfilePage';
@@ -16,18 +18,26 @@ import FeaturesPage from '@/pages/FeaturesPage';
 import UserManagementPage from '@/pages/UserManagementPage';
 import AssessmentManagementPage from '@/pages/AssessmentManagementPage';
 import AssessmentCreationWizard from '@/pages/AssessmentCreationWizard';
+import EnhancedAttendanceManagement from '@/pages/EnhancedAttendanceManagement';
+import EnhancedCourseManagement from '@/pages/EnhancedCourseManagement';
+import EnhancedClassScheduling from '@/pages/EnhancedClassScheduling';
+import EnhancedFacultyStatusManagement from '@/pages/EnhancedFacultyStatusManagement';
 import QuestionCreationPage from './pages/QuestionCreationPage.jsx';
 import QuestionBankPage from './pages/QuestionBankPage.jsx';
 import StudentAssessmentListPage from './pages/StudentAssessmentListPage.jsx';
-import StudentAssessmentTakingPage from './pages/StudentAssessmentTakingPage.jsx';
-import StudentAssessmentResultsPage from './pages/StudentAssessmentResultsPage.jsx';
+import StudentAssessmentResultsEnhanced from './pages/StudentAssessmentResultsEnhanced.jsx';
 import AnalyticsDashboard from './pages/AnalyticsDashboard.jsx';
 import AssessmentDetailsPage from './pages/AssessmentDetailsPage.jsx';
-
+import CodingProfilesManagementPage from './pages/CodingProfilesManagementPage.jsx';
+import StudentCodingPlatformsPage from './pages/StudentCodingPlatformsPage.jsx';
+import AssessmentTakeWizard from '@/components/assessment-taking/AssessmentTakeWizard';
+import ProjectManagementPage from './pages/ProjectManagementPage.jsx';
+// MEDIUM FIX: Import Error Boundary
+import ErrorBoundary from '@/components/common/ErrorBoundary';
+  
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import CodingProfilesManagementPage from './pages/admin/CodingProfilesManagementPage';
 
 const ProtectedRoute = ({ children, roles }) => {
   const { user } = useAuth();
@@ -49,6 +59,7 @@ const ConditionalLayout = ({ children }) => {
     return children;
   }
   
+  
   return <Layout>{children}</Layout>;
 };
 
@@ -62,8 +73,9 @@ function AppRoutes() {
         user ? <Navigate to={`/dashboard/${user.role === 'super-admin' ? 'super-admin' : user.role === 'college-admin' ? 'college-admin' : user.role === 'faculty' ? 'faculty' : 'student'}`} replace /> : <LoginPage />
       } />
       <Route path="/signup" element={
-        user ? <Navigate to={`/dashboard/${user.role === 'super-admin' ? 'super-admin' : user.role === 'college-admin' ? 'college-admin' : user.role === 'faculty' ? 'faculty' : 'student'}`} replace /> : <LoginPage />
+        user ? <Navigate to={`/dashboard/${user.role === 'super-admin' ? 'super-admin' : user.role === 'college-admin' ? 'college-admin' : user.role === 'faculty' ? 'faculty' : 'student'}`} replace /> : <SignupPage />
       } />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/create-question" element={<QuestionCreationPage />} />
 
@@ -79,7 +91,7 @@ function AppRoutes() {
         path="/dashboard/super-admin" 
         element={
           <ProtectedRoute roles={['super-admin']}>
-            <SuperAdminDashboard />
+            <EnhancedSuperAdminDashboard />
           </ProtectedRoute>
         } 
       />
@@ -95,7 +107,7 @@ function AppRoutes() {
         path="/dashboard/faculty" 
         element={
           <ProtectedRoute roles={['faculty']}>
-            <FacultyDashboard />
+            <EnhancedFacultyDashboard />
           </ProtectedRoute>
         } 
       />
@@ -103,7 +115,7 @@ function AppRoutes() {
         path="/dashboard/student" 
         element={
           <ProtectedRoute roles={['student']}>
-            <StudentDashboard />
+            <EnhancedStudentDashboard />
           </ProtectedRoute>
         } 
       />
@@ -121,14 +133,6 @@ function AppRoutes() {
         element={
           <ProtectedRoute roles={['super-admin']}>
             <UserManagementPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/admin/coding-profiles" 
-        element={
-          <ProtectedRoute roles={['super-admin']}>
-            <CodingProfilesManagementPage />
           </ProtectedRoute>
         } 
       />
@@ -153,6 +157,74 @@ function AppRoutes() {
         element={
           <ProtectedRoute roles={['super-admin', 'college-admin', 'faculty']}>
             <QuestionBankPage />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Enhanced Management Routes - Super Admin Only */}
+      <Route 
+        path="/dashboard/super-admin/attendance" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <EnhancedAttendanceManagement />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/super-admin/courses" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <EnhancedCourseManagement />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/super-admin/scheduling" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <EnhancedClassScheduling />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/super-admin/faculty-status" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <EnhancedFacultyStatusManagement />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Project Management Routes - Role Specific */}
+      <Route 
+        path="/dashboard/super-admin/project-management" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <ProjectManagementPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/college-admin/project-management" 
+        element={
+          <ProtectedRoute roles={['college-admin']}>
+            <ProjectManagementPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/faculty/project-management" 
+        element={
+          <ProtectedRoute roles={['faculty']}>
+            <ProjectManagementPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/student/project-management" 
+        element={
+          <ProtectedRoute roles={['student']}>
+            <ProjectManagementPage />
           </ProtectedRoute>
         } 
       />
@@ -188,18 +260,23 @@ function AppRoutes() {
         } 
       />
       <Route 
-        path="/student/assessments/:assessmentId/take" 
+        path="/student/assessments/:assessmentId/results" 
         element={
           <ProtectedRoute roles={['student']}>
-            <StudentAssessmentTakingPage />
+            <StudentAssessmentResultsEnhanced />
           </ProtectedRoute>
         } 
       />
       <Route 
-        path="/student/assessments/:assessmentId/results" 
+        path="/student/assessments/:assessmentId/take" 
         element={
           <ProtectedRoute roles={['student']}>
-            <StudentAssessmentResultsPage />
+            <ErrorBoundary 
+              title="Assessment Taking Error"
+              message="An error occurred while loading the assessment. Please try again or contact support if the problem persists."
+            >
+              <AssessmentTakeWizard />
+            </ErrorBoundary>
           </ProtectedRoute>
         } 
       />
@@ -213,6 +290,26 @@ function AppRoutes() {
         } 
       />
 
+      {/* Coding Profiles Routes */}
+      <Route 
+        path="/admin/coding-profiles" 
+        element={
+          <ProtectedRoute roles={['super-admin']}>
+            <CodingProfilesManagementPage />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Student Coding Platforms Route */}
+      <Route 
+        path="/student/coding-platforms" 
+        element={
+          <ProtectedRoute roles={['student']}>
+            <StudentCodingPlatformsPage />
+          </ProtectedRoute>
+        } 
+      />
+    
       <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} replace />} />
     </Routes>
   );
@@ -221,14 +318,19 @@ function AppRoutes() {
 function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      <Router>
-        <AuthProvider>
-          <ConditionalLayout>
-            <AppRoutes />
-          </ConditionalLayout>
-          <Toaster />
-        </AuthProvider>
-      </Router>
+      <ErrorBoundary 
+        title="Application Error"
+        message="A critical error occurred. Please refresh the page or contact support."
+      >
+        <Router>
+          <AuthProvider>
+            <ConditionalLayout>
+              <AppRoutes />
+            </ConditionalLayout>
+            <Toaster />
+          </AuthProvider>
+        </Router>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

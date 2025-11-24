@@ -20,6 +20,25 @@ class ApiService {
     localStorage.removeItem('lmsToken');
   }
 
+  // Get CSRF token from cookie or localStorage
+  getCSRFToken() {
+    // Try to get from cookie first (set by server)
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'XSRF-TOKEN') {
+        return value;
+      }
+    }
+    // Fallback to localStorage
+    return localStorage.getItem('csrfToken');
+  }
+
+  // Set CSRF token
+  setCSRFToken(token) {
+    localStorage.setItem('csrfToken', token);
+  }
+
   // Get headers for API requests
   getHeaders() {
     const headers = {
@@ -31,38 +50,185 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // Add CSRF token for state-changing requests
+    const csrfToken = this.getCSRFToken();
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+
     return headers;
   }
 
-  // Make HTTP request
-  async request(endpoint, options = {}) {
-    const url = `${this.baseURL}${endpoint}`;
-    const config = {
-      headers: this.getHeaders(),
-      ...options,
-    };
+  // Retry utility with exponential backoff
+  async retryRequest(fn, maxRetries = 3, delay = 1000) {
+    let lastError;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
 
-    try {
-      const response = await fetch(url, config);
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Handle authentication errors
-        if (response.status === 401) {
-          this.removeAuthToken();
-          localStorage.removeItem('lmsUser');
-          window.location.href = '/login';
-          throw new Error('Authentication failed');
+        // Don't retry on authentication errors or validation errors
+        if (error.message?.includes('Authentication') ||
+          error.message?.includes('Unauthorized') ||
+          error.message?.includes('not found') ||
+          error.message?.includes('expired') ||
+          error.message?.includes('exceeded') ||
+          error.message?.includes('permission')) {
+          throw error;
         }
 
-        throw new Error(data.message || 'Request failed');
+        // Don't retry on timeout/abort errors
+        if (error.name === 'AbortError' ||
+          (error instanceof DOMException && error.name === 'AbortError') ||
+          error.message?.toLowerCase().includes('timeout') ||
+          error.message?.toLowerCase().includes('aborted') ||
+          error.message?.toLowerCase().includes('cancelled')) {
+          throw error;
+        }
+
+        // Don't retry on 4xx errors (except network issues)
+        if (error.message && !error.message.includes('network') && !error.message.includes('fetch')) {
+          throw error;
+        }
+
+        // Wait before retrying (exponential backoff)
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  // Make HTTP request with retry logic and timeout
+  async request(endpoint, options = {}, retryOptions = {}) {
+    const { maxRetries = 3, retryDelay = 1000, timeout = 30000 } = retryOptions;
+    const url = `${this.baseURL}${endpoint}`;
+
+    // CRITICAL FIX: Request timeout (30 seconds default)
+    const controller = new AbortController();
+    let timeoutId = null;
+
+    // Helper to safely clear timeout
+    const clearTimeoutSafely = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    // Set up timeout with proper error message
+    timeoutId = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        controller.abort('Request timeout - server took too long to respond');
+      }
+    }, timeout);
+
+    return this.retryRequest(async () => {
+      // Check if already aborted before making request
+      if (controller.signal.aborted) {
+        throw new Error('Request was cancelled');
       }
 
-      return data;
-    } catch (error) {
-      // API request failed
-      throw error;
-    }
+      const config = {
+        headers: this.getHeaders(),
+        ...options,
+        signal: controller.signal, // MEDIUM FIX: Add abort signal for timeout
+      };
+
+      try {
+        const response = await fetch(url, config);
+        clearTimeoutSafely(); // Clear timeout on success
+
+        // Check if request was aborted before parsing response
+        if (controller.signal.aborted) {
+          throw new DOMException('Request was cancelled', 'AbortError');
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          // Handle authentication errors
+          if (response.status === 401) {
+            this.removeAuthToken();
+            localStorage.removeItem('lmsUser');
+            window.location.href = '/login';
+            throw new Error('Authentication failed');
+          }
+
+          // Handle CSRF token errors - fetch new token and retry once
+          if (response.status === 403 &&
+            (data.message?.includes('CSRF token') || data.message?.includes('csrf'))) {
+            // Fetch new CSRF token
+            try {
+              await this.fetchCSRFToken();
+              // Retry the request with new CSRF token
+              const retryConfig = {
+                ...config,
+                headers: this.getHeaders()
+              };
+              const retryResponse = await fetch(url, retryConfig);
+              const retryData = await retryResponse.json();
+
+              if (!retryResponse.ok) {
+                throw new Error(retryData.message || 'Request failed');
+              }
+
+              return retryData;
+            } catch (csrfError) {
+              console.error('Failed to refresh CSRF token:', csrfError);
+              throw new Error(data.message || 'CSRF token error');
+            }
+          }
+
+          // Handle email verification requirements - return special response instead of throwing error
+          if (response.status === 403 && data.requiresEmailVerification) {
+            // Return a special response object instead of throwing an error
+            // This prevents it from being logged as an error since it's expected behavior
+            return {
+              success: false,
+              requiresEmailVerification: true,
+              message: data.message || 'Email verification required'
+            };
+          }
+
+          // Handle rate limiting (429) - return special response instead of throwing error
+          if (response.status === 429) {
+            // Extract retry-after header if available
+            const retryAfter = response.headers.get('Retry-After') || response.headers.get('retry-after');
+            return {
+              success: false,
+              rateLimited: true,
+              message: data.message || 'Too many requests, please try again later',
+              retryAfter: retryAfter ? parseInt(retryAfter) : null
+            };
+          }
+
+          throw new Error(data.message || 'Request failed');
+        }
+
+        return data;
+      } catch (error) {
+        clearTimeoutSafely(); // Always clear timeout on error
+
+        // Handle abort errors more comprehensively
+        // Check for AbortError by name, message, or signal state
+        const isAbortError = error.name === 'AbortError' ||
+          error instanceof DOMException && error.name === 'AbortError' ||
+          error.message?.toLowerCase().includes('aborted') ||
+          error.message?.toLowerCase().includes('signal') ||
+          error.message?.toLowerCase().includes('cancelled') ||
+          controller.signal.aborted;
+
+        if (isAbortError) {
+          // Provide user-friendly error message
+          throw new Error('Request timeout - the server took too long to respond. Please try again.');
+        }
+
+        throw error;
+      }
+    }, maxRetries, retryDelay);
   }
 
   // GET request
@@ -157,8 +323,27 @@ class ApiService {
     if (response.success) {
       this.setAuthToken(response.data.token);
       localStorage.setItem('lmsUser', JSON.stringify(response.data.user));
+      // Fetch CSRF token after successful login
+      await this.fetchCSRFToken();
     }
     return response;
+  }
+
+  // Fetch CSRF token from server
+  async fetchCSRFToken() {
+    try {
+      // PERFORMANCE FIX: Use shorter timeout and no retries for faster page load
+      const response = await this.request('/csrf-token',
+        { method: 'GET' },
+        { timeout: 10000, maxRetries: 1 }
+      );
+      if (response.success && response.csrfToken) {
+        this.setCSRFToken(response.csrfToken);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch CSRF token:', error);
+      // Don't throw - CSRF token fetch is not critical for login
+    }
   }
 
   async register(userData) {
@@ -166,6 +351,8 @@ class ApiService {
     if (response.success) {
       this.setAuthToken(response.data.token);
       localStorage.setItem('lmsUser', JSON.stringify(response.data.user));
+      // Fetch CSRF token after successful registration
+      await this.fetchCSRFToken();
     }
     return response;
   }
@@ -182,7 +369,11 @@ class ApiService {
   }
 
   async getProfile() {
-    return this.get('/auth/profile');
+    // PERFORMANCE FIX: Use shorter timeout and no retries for faster page load
+    return this.request('/auth/profile',
+      { method: 'GET' },
+      { timeout: 10000, maxRetries: 1 }
+    );
   }
 
   async updateProfile(profileData) {
@@ -191,6 +382,14 @@ class ApiService {
 
   async changePassword(passwordData) {
     return this.put('/auth/change-password', passwordData);
+  }
+
+  async resendVerificationEmail(email) {
+    return this.post('/auth/resend-verification', { email });
+  }
+
+  async verifyEmail(token) {
+    return this.post('/auth/verify-email', { token });
   }
 
 
@@ -512,6 +711,14 @@ class ApiService {
     return this.post(`/assessments/notifications/reminder/${assessmentId}`);
   }
 
+  async sendAssessmentNotification(assessmentId, studentId, notificationData) {
+    return this.post(`/assessments/notifications/send`, {
+      assessment_id: assessmentId,
+      student_id: studentId,
+      ...notificationData
+    });
+  }
+
   // Question Selection Helpers
   async getQuestionsForSelection(params = {}) {
     const queryString = new URLSearchParams(params).toString();
@@ -611,6 +818,72 @@ class ApiService {
     return this.delete(`/question-bank/questions/${id}`);
   }
 
+  async downloadQuestionTemplate(type) {
+    const url = `${this.baseURL}/question-bank/questions/template/${type}`;
+    const headers = this.getHeaders();
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to download template');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `question_template_${type}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    return { success: true };
+  }
+
+  async previewBulkUploadQuestions(file, questionType) {
+    const url = `${this.baseURL}/question-bank/questions/bulk-upload/preview`;
+    const headers = this.getHeaders();
+    delete headers['Content-Type'];
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('question_type', questionType);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to preview bulk upload');
+    return data;
+  }
+
+  async bulkUploadQuestions(file, questionType) {
+    const url = `${this.baseURL}/question-bank/questions/bulk-upload`;
+    const headers = this.getHeaders();
+    delete headers['Content-Type'];
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('question_type', questionType);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Bulk upload failed');
+    return data;
+  }
+
   async uploadQuestionAttachment(questionId, file) {
     const url = `${this.baseURL}/question-bank/questions/${questionId}/attachments`;
     const headers = this.getHeaders();
@@ -658,7 +931,7 @@ class ApiService {
 
   async verifyCodingQuestion(verificationData) {
     return this.post('/coding/verify', verificationData);
-      }
+  }
 
   async getCodingHealthCheck() {
     return this.get('/coding/health');
@@ -669,8 +942,19 @@ class ApiService {
   }
 
   // Student Assessment Methods
-  async getAssessmentQuestions(assessmentId) {
-    return this.get(`/assessments/${assessmentId}/questions`);
+  async getAssessmentQuestionsForAdmin(assessmentId) {
+    return this.get(`/assessments/${assessmentId}/questions/admin`);
+  }
+
+  async addQuestionToAssessment(assessmentId, questionId, sectionId, questionOrder, points, timeLimitSeconds, isRequired) {
+    return this.post(`/assessments/templates/${assessmentId}/questions`, {
+      question_id: questionId,
+      section_id: sectionId,
+      question_order: questionOrder,
+      points: points,
+      time_limit_seconds: timeLimitSeconds,
+      is_required: isRequired
+    });
   }
 
   async assignAssessmentToStudents(assessmentId, studentIds) {
@@ -695,7 +979,7 @@ class ApiService {
 
   async getAssessmentResults(assessmentId, studentId) {
     return this.get(`/assessments/${assessmentId}/results/${studentId}`);
-    }
+  }
 
   async getStudentAssessments(studentId, params = {}) {
     const queryParams = new URLSearchParams(params).toString();
@@ -712,88 +996,6 @@ class ApiService {
     return this.post(`/assessments/debug/${assessmentId}/update-dates`, dates);
   }
 
-  // Coding Profiles endpoints
-  async getCodingPlatforms() {
-    return this.get('/coding-profiles/platforms');
-  }
-
-  async getUserCodingProfiles(userId) {
-    return this.get(`/coding-profiles/user/${userId}`);
-  }
-
-  async getUserCodingProgress(userId) {
-    return this.get(`/coding-profiles/user/${userId}/progress`);
-  }
-
-  async upsertCodingProfile(profileData) {
-    return this.post('/coding-profiles/profile', profileData);
-  }
-
-  async fetchCodingProfileData(userId, platformId) {
-    return this.get(`/coding-profiles/profile/${userId}/${platformId}/fetch`);
-  }
-
-  // Super Admin coding profile methods
-  async getAllCodingProfiles() {
-    return this.get('/coding-profiles/admin/all');
-  }
-
-  async bulkUploadCodingProfiles(profiles) {
-    return this.post('/coding-profiles/admin/bulk-upload', { profiles });
-  }
-
-  async bulkRefreshCodingProfiles(profileIds, maxConcurrency = 100) {
-    return this.post('/coding-profiles/admin/bulk-refresh', { profileIds, maxConcurrency });
-  }
-
-  async streamingBulkRefresh(profileIds, maxConcurrency = 100, onProgress) {
-    return new Promise((resolve, reject) => {
-      // Create a POST request with SSE
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseURL}/coding-profiles/admin/streaming-refresh`);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
-      xhr.setRequestHeader('Accept', 'text/event-stream');
-      xhr.setRequestHeader('Cache-Control', 'no-cache');
-      
-      let buffer = '';
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 3 || xhr.readyState === 4) {
-          buffer += xhr.responseText;
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // Keep the last incomplete line
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                
-                if (data.type === 'progress' && onProgress) {
-                  onProgress(data);
-                } else if (data.type === 'complete') {
-                  resolve(data);
-                } else if (data.type === 'error') {
-                  reject(new Error(data.message));
-                }
-              } catch (error) {
-              }
-            }
-          }
-        }
-      };
-      
-      xhr.onerror = (error) => {
-        reject(error);
-      };
-      
-      xhr.send(JSON.stringify({ profileIds, maxConcurrency }));
-    });
-  }
-
-  async deleteCodingProfile(profileId) {
-    return this.delete(`/coding-profiles/admin/profile/${profileId}`);
-  }
 
   // College and Department methods
   async getColleges() {
@@ -807,6 +1009,487 @@ class ApiService {
 
   async getDepartmentsByCollege(collegeId) {
     return this.get(`/colleges/${collegeId}/departments`);
+  }
+
+  // Coding Profiles endpoints
+  async getCodingPlatforms() {
+    // Increased timeout for coding profiles as scraping can take longer
+    return this.request('/coding-profiles/platforms',
+      { method: 'GET' },
+      { timeout: 60000, maxRetries: 2 } // 60 seconds timeout, fewer retries
+    );
+  }
+
+  async getAllStudentsCodingProfiles(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    // Increased timeout for coding profiles as scraping can take longer
+    return this.request(`/coding-profiles/students${queryString ? `?${queryString}` : ''}`,
+      { method: 'GET' },
+      { timeout: 60000, maxRetries: 2 } // 60 seconds timeout, fewer retries
+    );
+  }
+
+  async getStudentCodingProfiles() {
+    return this.get('/coding-profiles/my-profiles');
+  }
+
+  async addCodingProfile(studentId, profileData) {
+    return this.post('/coding-profiles/profiles', { student_id: studentId, ...profileData });
+  }
+
+  async updateCodingProfile(profileId, profileData) {
+    return this.put(`/coding-profiles/profiles/${profileId}`, profileData);
+  }
+
+  async updateStudentCodingProfile(studentId, profileId, profileData) {
+    return this.put(`/coding-profiles/student/${studentId}/profiles/${profileId}`, profileData);
+  }
+
+  async syncCodingProfile(profileId) {
+    return this.post(`/coding-profiles/profiles/${profileId}/sync`);
+  }
+
+  async syncAllProfiles() {
+    return this.post('/coding-profiles/sync-all');
+  }
+
+  async deleteCodingProfile(profileId) {
+    return this.delete(`/coding-profiles/profiles/${profileId}`);
+  }
+
+  async deleteAllStudentProfiles(studentId) {
+    return this.delete(`/coding-profiles/student/${studentId}`);
+  }
+
+  async fetchPlatformStatistics(studentId) {
+    return this.get(`/coding-profiles/student/${studentId}/statistics`);
+  }
+
+  async getStudentPlatformStatistics() {
+    return this.get('/coding-profiles/my-statistics');
+  }
+
+  async getStudentCachedPlatformStatistics() {
+    return this.get('/coding-profiles/my-statistics/cached');
+  }
+
+  async getCachedPlatformStatistics(studentId) {
+    return this.get(`/coding-profiles/student/${studentId}/statistics/cached`);
+  }
+
+  async fetchBatchPlatformStatistics(studentIds, forceRefresh = false) {
+    // Increased timeout for batch statistics as scraping multiple students can take longer
+    return this.request('/coding-profiles/students/batch-statistics',
+      {
+        method: 'POST',
+        body: JSON.stringify({ studentIds, forceRefresh })
+      },
+      { timeout: 180000, maxRetries: 2 } // 3 minutes timeout, fewer retries
+    );
+  }
+
+  async getCachedBatchPlatformStatistics(batchId) {
+    return this.get(`/coding-profiles/students/batch-statistics/${batchId}/cached`);
+  }
+
+  async getCodingProfileAnalytics() {
+    return this.get('/coding-profiles/analytics');
+  }
+
+  // Bulk Upload endpoints
+  async downloadBulkUploadTemplate() {
+    const url = `${this.baseURL}/bulk-upload/template`;
+    const headers = this.getHeaders();
+    // Remove content-type for blob download
+    delete headers['Content-Type'];
+    const response = await fetch(url, { headers });
+    if (!response.ok) throw new Error('Failed to download template');
+    return await response.blob();
+  }
+
+  async bulkUploadProfiles(file) {
+    const url = `${this.baseURL}/bulk-upload/upload`;
+    const headers = this.getHeaders();
+    // Remove content-type for multipart
+    delete headers['Content-Type'];
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Upload failed');
+    return data;
+  }
+
+  async getBulkUploadStats() {
+    return this.get('/bulk-upload/stats');
+  }
+
+  async syncBulkProfiles() {
+    return this.post('/bulk-upload/sync', { autoSync: true });
+  }
+
+  // Enhanced Features API endpoints
+
+  // Attendance Management
+  async getAttendanceSessions(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/attendance/sessions${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async createAttendanceSession(data) {
+    return this.post('/enhanced/attendance/sessions', data);
+  }
+
+  async markAttendance(data) {
+    return this.post('/enhanced/attendance/mark', data);
+  }
+
+  async getAttendanceRecords(sessionId) {
+    return this.get(`/enhanced/attendance/sessions/${sessionId}/records`);
+  }
+
+  // Course Management
+  async getCourses(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/courses${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async createCourse(data) {
+    return this.post('/enhanced/courses', data);
+  }
+
+  // Class Scheduling
+  async getClasses(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/classes${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getClassSchedules(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/schedules${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // Faculty Status Management
+  async getFacultyStatus(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/faculty/status${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async updateFacultyStatus(data) {
+    return this.put('/enhanced/faculty/status', data);
+  }
+
+  async getFacultyAvailability(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/faculty/availability${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getFacultyWorkload(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/faculty/workload${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // General
+  async getRooms(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/rooms${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getDepartments(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/enhanced/departments${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // Notifications
+  async getNotifications(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString ? `/notifications?${queryString}` : '/notifications';
+    return this.get(endpoint);
+  }
+
+  async markNotificationAsRead(notificationId) {
+    return this.patch(`/notifications/${notificationId}/read`);
+  }
+
+  async markAllNotificationsAsRead() {
+    return this.patch('/notifications/read-all');
+  }
+
+  // ============================================================
+  // PROJECT MANAGEMENT APIs
+  // ============================================================
+
+  // Projects
+  async getProjects(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/projects${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getProjectById(projectId) {
+    return this.get(`/v1/project-management/projects/${projectId}`);
+  }
+
+  async createProject(projectData) {
+    return this.post('/v1/project-management/projects', projectData);
+  }
+
+  async updateProject(projectId, projectData) {
+    return this.put(`/v1/project-management/projects/${projectId}`, projectData);
+  }
+
+  async deleteProject(projectId) {
+    return this.delete(`/v1/project-management/projects/${projectId}`);
+  }
+
+  async updateProjectStatus(projectId, status) {
+    return this.patch(`/v1/project-management/projects/${projectId}/status`, { status });
+  }
+
+  async addDepartmentsToProject(projectId, departmentIds) {
+    return this.post(`/v1/project-management/projects/${projectId}/departments`, { department_ids: departmentIds });
+  }
+
+  async addBatchesToProject(projectId, batchIds) {
+    return this.post(`/v1/project-management/projects/${projectId}/batches`, { batch_ids: batchIds });
+  }
+
+  // Faculty Allocation
+  async allocateFaculty(projectId, facultyData) {
+    return this.post(`/v1/project-management/projects/${projectId}/faculty`, facultyData);
+  }
+
+  async getProjectFaculty(projectId) {
+    return this.get(`/v1/project-management/projects/${projectId}/faculty`);
+  }
+
+  async replaceFaculty(allocationId, replacementData) {
+    return this.post(`/v1/project-management/faculty-allocations/${allocationId}/replace`, replacementData);
+  }
+
+  async getRecommendedTrainers(projectId) {
+    return this.get(`/v1/project-management/faculty/recommendations?project_id=${projectId}`);
+  }
+
+  async getFacultyProfile(facultyId) {
+    return this.get(`/v1/project-management/faculty/${facultyId}/profile`);
+  }
+
+  async updateFacultyProfile(facultyId, profileData) {
+    return this.put(`/v1/project-management/faculty/${facultyId}/profile`, profileData);
+  }
+
+  async checkFacultyAvailability(facultyId, startTime, endTime, excludeSessionId = null) {
+    const params = new URLSearchParams({ faculty_id: facultyId, start_time: startTime, end_time: endTime });
+    if (excludeSessionId) params.append('exclude_session_id', excludeSessionId);
+    return this.get(`/v1/project-management/faculty/${facultyId}/availability?${params}`);
+  }
+
+  // Sessions/Scheduling
+  async createSession(sessionData) {
+    return this.post('/v1/project-management/sessions', sessionData);
+  }
+
+  async getSessions(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/sessions${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async autoGenerateSchedule(projectId) {
+    return this.post('/v1/project-management/sessions/auto-generate', { project_id: projectId });
+  }
+
+  async checkConflicts(params) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/sessions/conflicts?${queryString}`);
+  }
+
+  async exportSessionsToExcel(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/sessions/export?${queryString}`, { responseType: 'blob' });
+  }
+
+  // Attendance
+  async markAttendance(sessionId, attendanceData) {
+    return this.post('/v1/project-management/attendance', { session_id: sessionId, attendance_data: attendanceData });
+  }
+
+  async getSessionAttendance(sessionId) {
+    return this.get(`/v1/project-management/attendance/session/${sessionId}`);
+  }
+
+  async bulkUploadAttendance(sessionId, file) {
+    const formData = new FormData();
+    formData.append('session_id', sessionId);
+    formData.append('file', file);
+    return this.post('/v1/project-management/attendance/bulk-upload', formData, { 'Content-Type': 'multipart/form-data' });
+  }
+
+  async getAttendanceReports(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/attendance/reports${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getStudentAttendanceSummary(studentId, params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/attendance/student/${studentId}/summary${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // Feedback
+  async submitFeedback(feedbackData) {
+    return this.post('/v1/project-management/feedback', feedbackData);
+  }
+
+  async getFeedback(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/feedback${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getFeedbackAnalytics(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/feedback/analytics${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // Topics Covered
+  async addTopicsCovered(sessionId, topics) {
+    return this.post('/v1/project-management/topics-covered', { session_id: sessionId, topics });
+  }
+
+  async getSessionTopics(sessionId) {
+    return this.get(`/v1/project-management/topics-covered/session/${sessionId}`);
+  }
+
+  async getProjectTopics(projectId) {
+    return this.get(`/v1/project-management/topics-covered/project/${projectId}`);
+  }
+
+  async updateTopicsCovered(topicId, topicData) {
+    return this.put(`/v1/project-management/topics-covered/${topicId}`, topicData);
+  }
+
+  // Invoices
+  async generateInvoice(invoiceData) {
+    return this.post('/v1/project-management/invoices/generate', invoiceData);
+  }
+
+  async getInvoices(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/invoices${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getFacultyInvoices(facultyId) {
+    return this.get(`/v1/project-management/invoices/faculty/${facultyId}`);
+  }
+
+  // Calendar
+  async getCalendarEvents(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/calendar${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getDayView(date) {
+    return this.get(`/v1/project-management/calendar/day/${date}`);
+  }
+
+  async getWeekView(date) {
+    return this.get(`/v1/project-management/calendar/week/${date}`);
+  }
+
+  async getMonthView(date) {
+    return this.get(`/v1/project-management/calendar/month/${date}`);
+  }
+
+  // Admin Allocation
+  async allocateAdmin(projectId, adminData) {
+    return this.post('/v1/project-management/admin-allocations', { project_id: projectId, ...adminData });
+  }
+
+  async getProjectAdmins(projectId) {
+    return this.get(`/v1/project-management/projects/${projectId}/admins`);
+  }
+
+  async removeAdminAllocation(allocationId) {
+    return this.delete(`/v1/project-management/admin-allocations/${allocationId}`);
+  }
+
+  async getAdminWorkload(adminId) {
+    return this.get(`/v1/project-management/admin/workload?admin_id=${adminId}`);
+  }
+
+  // Reports
+  async getProjectProgressReport(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/reports/project-progress${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getTrainerUtilizationReport(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/reports/trainer-utilization${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getCollegeAttendanceReport(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/reports/college-attendance${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getInvoiceSummaryReport(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    return this.get(`/v1/project-management/reports/invoice-summary${queryString ? `?${queryString}` : ''}`);
+  }
+
+  // Assessment Retake
+  async retakeAssessment(assessmentId) {
+    return this.post(`/student-assessments/${assessmentId}/retake`);
+  }
+
+  // Assessment Taking Methods
+  async startAssessment(assessmentId, deviceInfo = {}) {
+    return this.post(`/student-assessments/${assessmentId}/start`, deviceInfo);
+  }
+
+  async getStudentAssessment(assessmentId) {
+    return this.get(`/student-assessments/${assessmentId}`);
+  }
+
+  async getAssessmentQuestions(assessmentId) {
+    return this.get(`/student-assessments/${assessmentId}/questions`);
+  }
+
+  async saveAnswer(submissionId, answerData) {
+    return this.post(`/student-assessments/${submissionId}/answers`, answerData);
+  }
+
+  async submitAssessment(submissionId, submissionData = {}) {
+    return this.post(`/student-assessments/${submissionId}/submit`, submissionData);
+  }
+
+  async getAssessmentResults(submissionId) {
+    return this.get(`/student-assessments/${submissionId}/results`);
+  }
+
+  async runCodingTests(testData) {
+    return this.post('/coding/test-cases', testData);
+  }
+
+  async logProctoringViolation(submissionId, violationData) {
+    return this.post('/proctoring/violations', {
+      submissionId,
+      ...violationData
+    });
+  }
+
+  async verifyAssessmentAccess(assessmentId, accessData) {
+    return this.post('/student-assessments/verify-access', {
+      assessmentId,
+      ...accessData
+    });
+  }
+
+  async validateAssessmentAttempt(assessmentId) {
+    return this.post('/student-assessments/validate-attempt', { assessmentId });
   }
 }
 

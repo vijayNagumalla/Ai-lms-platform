@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { validateCSRFToken } from '../middleware/csrf.js';
 import {
   executeCode,
   runTestCases,
@@ -16,10 +17,10 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Execute code
-router.post('/execute', executeCode);
+router.post('/execute', validateCSRFToken, executeCode);
 
 // Run test cases
-router.post('/test-cases', runTestCases);
+router.post('/test-cases', validateCSRFToken, runTestCases);
 
 // Get supported languages
 router.get('/languages', getSupportedLanguages);
@@ -28,7 +29,7 @@ router.get('/languages', getSupportedLanguages);
 router.get('/templates', getLanguageTemplates);
 
 // Verify coding question
-router.post('/verify', verifyCodingQuestion);
+router.post('/verify', validateCSRFToken, verifyCodingQuestion);
 
 // Health check
 router.get('/health', healthCheck);

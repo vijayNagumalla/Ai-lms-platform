@@ -5,14 +5,14 @@ import crypto from 'crypto';
 export const createBatch = async (req, res) => {
   try {
     const { college_id, name, code, description, start_year, end_year } = req.body;
-    
+
     if (!college_id || !name || !code) {
       return res.status(400).json({
         success: false,
         message: 'College ID, name, and code are required'
       });
     }
-    
+
     // Check if college exists
     const [college] = await pool.query('SELECT id FROM colleges WHERE id = ? AND is_active = TRUE', [college_id]);
     if (college.length === 0) {
@@ -21,34 +21,34 @@ export const createBatch = async (req, res) => {
         message: 'College not found'
       });
     }
-    
+
     // Check if batch code already exists for this college
     const [existing] = await pool.query(
       'SELECT id FROM batches WHERE college_id = ? AND code = ? AND is_active = TRUE',
       [college_id, code]
     );
-    
+
     if (existing.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Batch code already exists for this college'
       });
     }
-    
+
     const id = crypto.randomUUID();
     await pool.query(
       `INSERT INTO batches (id, college_id, name, code, description, start_year, end_year) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [id, college_id, name, code, description || null, start_year || null, end_year || null]
     );
-    
+
     res.json({
       success: true,
       message: 'Batch created successfully',
       data: { id, name, code }
     });
   } catch (error) {
-    console.error('Error creating batch:', error);
+    // console.error('Error creating batch:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to create batch',
@@ -60,25 +60,25 @@ export const createBatch = async (req, res) => {
 export const getBatches = async (req, res) => {
   try {
     const { college_id } = req.query;
-    
+
     let sql = 'SELECT * FROM batches WHERE is_active = TRUE';
     let params = [];
-    
+
     if (college_id) {
       sql += ' AND college_id = ?';
       params.push(college_id);
     }
-    
+
     sql += ' ORDER BY start_year DESC, name ASC';
-    
+
     const [batches] = await pool.query(sql, params);
-    
+
     res.json({
       success: true,
       data: batches
     });
   } catch (error) {
-    console.error('Error getting batches:', error);
+    // console.error('Error getting batches:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get batches',
@@ -91,7 +91,7 @@ export const updateBatch = async (req, res) => {
   try {
     const { batchId } = req.params;
     const { name, code, description, start_year, end_year, is_active } = req.body;
-    
+
     const [batch] = await pool.query('SELECT * FROM batches WHERE id = ?', [batchId]);
     if (batch.length === 0) {
       return res.status(404).json({
@@ -99,14 +99,14 @@ export const updateBatch = async (req, res) => {
         message: 'Batch not found'
       });
     }
-    
+
     // Check if code already exists for other batches in the same college
     if (code && code !== batch[0].code) {
       const [existing] = await pool.query(
         'SELECT id FROM batches WHERE college_id = ? AND code = ? AND id != ? AND is_active = TRUE',
         [batch[0].college_id, code, batchId]
       );
-      
+
       if (existing.length > 0) {
         return res.status(400).json({
           success: false,
@@ -114,20 +114,20 @@ export const updateBatch = async (req, res) => {
         });
       }
     }
-    
+
     await pool.query(
       `UPDATE batches SET name = ?, code = ?, description = ?, start_year = ?, end_year = ?, is_active = ? WHERE id = ?`,
-      [name || batch[0].name, code || batch[0].code, description || batch[0].description, 
-       start_year || batch[0].start_year, end_year || batch[0].end_year, 
-       is_active !== undefined ? is_active : batch[0].is_active, batchId]
+      [name || batch[0].name, code || batch[0].code, description || batch[0].description,
+      start_year || batch[0].start_year, end_year || batch[0].end_year,
+      is_active !== undefined ? is_active : batch[0].is_active, batchId]
     );
-    
+
     res.json({
       success: true,
       message: 'Batch updated successfully'
     });
   } catch (error) {
-    console.error('Error updating batch:', error);
+    // console.error('Error updating batch:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update batch',
@@ -139,28 +139,28 @@ export const updateBatch = async (req, res) => {
 export const deleteBatch = async (req, res) => {
   try {
     const { batchId } = req.params;
-    
+
     // Check if batch is being used by any students
     const [students] = await pool.query(
       'SELECT COUNT(*) as count FROM users WHERE batch = (SELECT code FROM batches WHERE id = ?) AND is_active = TRUE',
       [batchId]
     );
-    
+
     if (students[0].count > 0) {
       return res.status(400).json({
         success: false,
         message: `Cannot delete batch. ${students[0].count} student(s) are currently assigned to this batch.`
       });
     }
-    
+
     await pool.query('UPDATE batches SET is_active = FALSE WHERE id = ?', [batchId]);
-    
+
     res.json({
       success: true,
       message: 'Batch deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting batch:', error);
+    // console.error('Error deleting batch:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete batch',
@@ -173,7 +173,7 @@ export const deleteBatch = async (req, res) => {
 export const getAllColleges = async (req, res) => {
   try {
     const { page = 1, limit = 10, search, city, state, country, is_active } = req.query;
-    
+
     // Ensure proper type conversion and validation
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 10)); // Max 100 per page
@@ -223,7 +223,7 @@ export const getAllColleges = async (req, res) => {
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`;
-    
+
     // Always include limit and offset parameters - ensure they are numbers
     const sqlParams = [...params, Number(limitNum), Number(offset)];
     const [colleges] = await pool.query(sql, sqlParams);
@@ -249,7 +249,7 @@ export const getAllColleges = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting colleges:', error);
+    // console.error('Error getting colleges:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get colleges',
@@ -262,41 +262,41 @@ export const getAllColleges = async (req, res) => {
 export const getCollegeDetails = async (req, res) => {
   try {
     const { collegeId } = req.params;
-    
+
     if (!collegeId) {
       return res.status(400).json({
         success: false,
         message: 'College ID is required'
       });
     }
-    
+
     // Get college basic info
     const [colleges] = await pool.execute(
       'SELECT * FROM colleges WHERE id = ? AND is_active = TRUE',
       [collegeId]
     );
-    
+
     if (colleges.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'College not found'
       });
     }
-    
+
     const college = colleges[0];
-    
+
     // Get contact persons
     const [contactPersons] = await pool.execute(
       'SELECT * FROM contact_persons WHERE college_id = ? AND is_active = TRUE ORDER BY is_primary DESC, created_at ASC',
       [collegeId]
     );
-    
+
     // Get departments
     const [departments] = await pool.execute(
       'SELECT * FROM college_departments WHERE college_id = ? AND is_active = TRUE ORDER BY created_at ASC',
       [collegeId]
     );
-    
+
     // Get user counts
     const [userCounts] = await pool.execute(`
       SELECT 
@@ -306,7 +306,7 @@ export const getCollegeDetails = async (req, res) => {
       FROM users 
       WHERE college_id = ? AND is_active = TRUE
     `, [collegeId]);
-    
+
     const collegeData = {
       ...college,
       contact_persons: contactPersons,
@@ -315,14 +315,14 @@ export const getCollegeDetails = async (req, res) => {
       faculty_count: userCounts[0]?.faculty_count || 0,
       student_count: userCounts[0]?.student_count || 0
     };
-    
+
     res.json({
       success: true,
       data: collegeData
     });
-    
+
   } catch (error) {
-    console.error('Error getting college details:', error);
+    // console.error('Error getting college details:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college details',
@@ -390,7 +390,7 @@ export const getCollegeById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting college:', error);
+    // console.error('Error getting college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college'
@@ -401,12 +401,12 @@ export const getCollegeById = async (req, res) => {
 // Create new college
 export const createCollege = async (req, res) => {
   try {
-    const { 
-      name, 
-      code, 
+    const {
+      name,
+      code,
       email,
       phone,
-      address, 
+      address,
       city,
       state,
       country,
@@ -467,8 +467,8 @@ export const createCollege = async (req, res) => {
     try {
       // Generate UUID for the college
       const collegeId = crypto.randomUUID();
-      console.log('Generated college ID:', collegeId);
-      
+      // console.log('Generated college ID:', collegeId);
+
       // Insert new college
       const [result] = await connection.execute(`
         INSERT INTO colleges (
@@ -479,25 +479,25 @@ export const createCollege = async (req, res) => {
         collegeId, name, code, email, phone, address, city, state, country, postal_code,
         website, logo_url, established_year, accreditation, description
       ]);
-      
-      console.log('College inserted successfully, result:', result);
+
+      // console.log('College inserted successfully, result:', result);
 
       // Insert contact persons
       for (let i = 0; i < contact_persons.length; i++) {
         const contact = contact_persons[i];
         const contactId = crypto.randomUUID();
-        console.log(`Inserting contact person ${i + 1}:`, { contactId, collegeId, contact });
-        
+        // console.log(`Inserting contact person ${i + 1}:`, { contactId, collegeId, contact });
+
         await connection.execute(`
           INSERT INTO contact_persons (
             id, college_id, name, phone, email, designation, is_primary
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [
-          contactId, collegeId, contact.name, contact.phone, contact.email, 
+          contactId, collegeId, contact.name, contact.phone, contact.email,
           contact.designation || null, i === 0 // First contact is primary
         ]);
-        
-        console.log(`Contact person ${i + 1} inserted successfully`);
+
+        // console.log(`Contact person ${i + 1} inserted successfully`);
       }
 
       // Insert departments if provided
@@ -505,15 +505,15 @@ export const createCollege = async (req, res) => {
         for (const dept of departments) {
           if (dept.name && dept.code) {
             const deptId = crypto.randomUUID();
-            console.log('Inserting department:', { deptId, collegeId, dept });
-            
+            // console.log('Inserting department:', { deptId, collegeId, dept });
+
             await connection.execute(`
               INSERT INTO college_departments (
                 id, college_id, name, code, description
               ) VALUES (?, ?, ?, ?, ?)
             `, [deptId, collegeId, dept.name, dept.code, dept.description || null]);
-            
-            console.log('Department inserted successfully');
+
+            // console.log('Department inserted successfully');
           }
         }
       }
@@ -523,15 +523,15 @@ export const createCollege = async (req, res) => {
         for (const batch of batches) {
           if (batch.name && batch.code) {
             const batchId = crypto.randomUUID();
-            console.log('Inserting batch:', { batchId, collegeId, batch });
-            
+            // console.log('Inserting batch:', { batchId, collegeId, batch });
+
             await connection.execute(`
               INSERT INTO batches (
                 id, college_id, name, code, description
               ) VALUES (?, ?, ?, ?, ?)
             `, [batchId, collegeId, batch.name, batch.code, batch.description || null]);
-            
-            console.log('Batch inserted successfully');
+
+            // console.log('Batch inserted successfully');
           }
         }
       }
@@ -552,7 +552,7 @@ export const createCollege = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error creating college:', error);
+    // console.error('Error creating college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to create college'
@@ -564,12 +564,12 @@ export const createCollege = async (req, res) => {
 export const updateCollege = async (req, res) => {
   try {
     const { collegeId } = req.params;
-    const { 
-      name, 
-      code, 
+    const {
+      name,
+      code,
       email,
       phone,
-      address, 
+      address,
       city,
       state,
       country,
@@ -645,7 +645,7 @@ export const updateCollege = async (req, res) => {
                 id, college_id, name, phone, email, designation, is_primary
               ) VALUES (?, ?, ?, ?, ?, ?, ?)
             `, [
-              contactId, collegeId, contact.name, contact.phone, contact.email, 
+              contactId, collegeId, contact.name, contact.phone, contact.email,
               contact.designation || null, i === 0 // First contact is primary
             ]);
           }
@@ -659,10 +659,10 @@ export const updateCollege = async (req, res) => {
           'SELECT id, code FROM college_departments WHERE college_id = ?',
           [collegeId]
         );
-        
+
         // Create a map of existing department codes to their IDs
         const existingDeptMap = new Map(existingDepts.map(dept => [dept.code, dept.id]));
-        
+
         // Process each department
         for (const dept of departments) {
           if (dept.name && dept.code) {
@@ -674,7 +674,7 @@ export const updateCollege = async (req, res) => {
                 SET name = ?, description = ?, is_active = TRUE, updated_at = NOW()
                 WHERE id = ?
               `, [dept.name, dept.description || null, existingDeptId]);
-              
+
               // Remove from map to track which ones we've processed
               existingDeptMap.delete(dept.code);
             } else {
@@ -688,7 +688,7 @@ export const updateCollege = async (req, res) => {
             }
           }
         }
-        
+
         // Deactivate any remaining existing departments that weren't updated
         if (existingDeptMap.size > 0) {
           const remainingDeptIds = Array.from(existingDeptMap.values());
@@ -721,7 +721,7 @@ export const updateCollege = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error updating college:', error);
+    // console.error('Error updating college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update college'
@@ -837,17 +837,17 @@ export const deleteCollege = async (req, res) => {
           'DELETE FROM users WHERE college_id = ?',
           [collegeId]
         );
-        
+
         await connection.execute(
           'DELETE FROM departments WHERE college_id = ?',
           [collegeId]
         );
-        
+
         await connection.execute(
           'DELETE FROM college_departments WHERE college_id = ?',
           [collegeId]
         );
-        
+
         await connection.execute(
           'DELETE FROM colleges WHERE id = ?',
           [collegeId]
@@ -878,7 +878,7 @@ export const deleteCollege = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error deleting college:', error);
+    // console.error('Error deleting college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete college',
@@ -999,7 +999,7 @@ export const softDeleteCollege = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error soft deleting college:', error);
+    // console.error('Error soft deleting college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to soft delete college',
@@ -1083,7 +1083,7 @@ export const getCollegeStats = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting college stats:', error);
+    // console.error('Error getting college stats:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college statistics'
@@ -1127,20 +1127,20 @@ export const getCollegeLocations = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Get college locations error:', error);
+    // console.error('Get college locations error:', error);
     // Return empty array on error to prevent frontend issues
     res.json({
       success: true,
       data: []
     });
   }
-}; 
+};
 
 // Get departments for a specific college
 export const getCollegeDepartments = async (req, res) => {
   try {
     const { collegeId } = req.params;
-    
+
     // Verify college exists
     const [colleges] = await pool.query('SELECT id, name FROM colleges WHERE id = ? AND is_active = TRUE', [collegeId]);
     if (colleges.length === 0) {
@@ -1164,7 +1164,7 @@ export const getCollegeDepartments = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting college departments:', error);
+    // console.error('Error getting college departments:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college departments'
@@ -1176,7 +1176,7 @@ export const getCollegeDepartments = async (req, res) => {
 export const getCollegeBatches = async (req, res) => {
   try {
     const { collegeId } = req.params;
-    
+
     // Verify college exists
     const [colleges] = await pool.query('SELECT id, name FROM colleges WHERE id = ? AND is_active = TRUE', [collegeId]);
     if (colleges.length === 0) {
@@ -1200,7 +1200,7 @@ export const getCollegeBatches = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting college batches:', error);
+    // console.error('Error getting college batches:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college batches'
@@ -1212,7 +1212,7 @@ export const getCollegeBatches = async (req, res) => {
 export const getDepartmentsForColleges = async (req, res) => {
   try {
     const { collegeIds } = req.body;
-    
+
     if (!collegeIds || !Array.isArray(collegeIds) || collegeIds.length === 0) {
       return res.status(400).json({
         success: false,
@@ -1258,7 +1258,7 @@ export const getDepartmentsForColleges = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting departments for colleges:', error);
+    // console.error('Error getting departments for colleges:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get departments for colleges'
@@ -1270,7 +1270,7 @@ export const getDepartmentsForColleges = async (req, res) => {
 export const getBatchesForColleges = async (req, res) => {
   try {
     const { collegeIds } = req.body;
-    
+
     if (!collegeIds || !Array.isArray(collegeIds) || collegeIds.length === 0) {
       return res.status(400).json({
         success: false,
@@ -1316,7 +1316,7 @@ export const getBatchesForColleges = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting batches for colleges:', error);
+    // console.error('Error getting batches for colleges:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get batches for colleges'
@@ -1327,12 +1327,14 @@ export const getBatchesForColleges = async (req, res) => {
 // Get common departments for dropdown (used when creating colleges)
 export const getCommonDepartments = async (req, res) => {
   try {
-    // Get common departments that can be used as templates
+    // Get all unique departments from users table
     const [departments] = await pool.query(`
-      SELECT name, code, description
-      FROM college_departments 
-      WHERE college_id = 'college-001' AND is_active = TRUE
-      ORDER BY name ASC
+      SELECT DISTINCT department as name, department as code, department as description
+      FROM users 
+      WHERE department IS NOT NULL 
+      AND department != '' 
+      AND role = 'student'
+      ORDER BY department ASC
     `);
 
     res.json({
@@ -1347,7 +1349,7 @@ export const getCommonDepartments = async (req, res) => {
       message: 'Failed to get common departments'
     });
   }
-}; 
+};
 
 // Restore deleted college
 export const restoreCollege = async (req, res) => {
@@ -1427,7 +1429,7 @@ export const restoreCollege = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error restoring college:', error);
+    // console.error('Error restoring college:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to restore college',
@@ -1460,7 +1462,7 @@ export const getDeletedColleges = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting deleted colleges:', error);
+    // console.error('Error getting deleted colleges:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get deleted colleges',
@@ -1547,7 +1549,7 @@ export const getCollegeDeletionStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting college deletion status:', error);
+    // console.error('Error getting college deletion status:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get college deletion status',

@@ -168,7 +168,7 @@ const AssessmentFlow = ({
 
     try {
       // Simulate eye tracking setup (replace with actual implementation)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced from 2000ms
       
       setEyeTrackingStatus('calibrated');
       setEyeCalibration(true);

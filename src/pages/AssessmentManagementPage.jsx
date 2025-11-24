@@ -17,7 +17,8 @@ import { motion } from 'framer-motion';
 import { 
   Plus, Search, Filter, Edit, Trash, Eye, Copy, Calendar, Clock, 
   Users, Target, BarChart3, Settings, FileText, Code, CheckSquare,
-  BookOpen, Database, Globe, Lock, Unlock, Archive, RefreshCw, Shield, Mail
+  BookOpen, Database, Globe, Lock, Unlock, Archive, RefreshCw, Shield, Mail,
+  Grid3X3, List
 } from 'lucide-react';
 
 
@@ -38,6 +39,7 @@ const AssessmentManagementPage = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [currentTab, setCurrentTab] = useState('assessments');
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
 
   // Dialog states
   const [showCreateQuestion, setShowCreateQuestion] = useState(false);
@@ -111,9 +113,20 @@ const AssessmentManagementPage = () => {
       setLoading(true);
       
       // Load assessments
+      console.log('Loading assessments...');
       const assessmentsResponse = await apiService.getAssessmentTemplates();
+      console.log('Assessments response:', assessmentsResponse);
+      
       if (assessmentsResponse.success) {
         setAssessments(assessmentsResponse.data);
+        console.log('Assessments loaded:', assessmentsResponse.data.length);
+      } else {
+        console.error('Failed to load assessments:', assessmentsResponse.message);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: `Failed to load assessments: ${assessmentsResponse.message}`
+        });
       }
 
       // Load questions
@@ -138,7 +151,7 @@ const AssessmentManagementPage = () => {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to load assessment data"
+        description: `Failed to load assessment data: ${error.message}`
       });
     } finally {
       setLoading(false);
@@ -605,6 +618,84 @@ const AssessmentManagementPage = () => {
     setShowCopyAssessment(true);
   };
 
+  const handleStatusChange = async (assessmentId, newStatus) => {
+    try {
+      setActionLoading(true);
+      
+      const response = await apiService.updateAssessmentTemplate(assessmentId, { status: newStatus });
+      
+      if (response.success) {
+        // Update the local state
+        setAssessments(prev => 
+          prev.map(assessment => 
+            assessment.id === assessmentId 
+              ? { ...assessment, status: newStatus }
+              : assessment
+          )
+        );
+        
+        toast({
+          title: "Status Updated",
+          description: `Assessment status changed to ${newStatus}`,
+        });
+
+        // If changing to published, assign to students and send notifications
+        if (newStatus === 'published') {
+          await assignAssessmentToAllStudents(assessmentId);
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: response.message || "Failed to update assessment status",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error updating assessment status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update assessment status",
+        variant: "destructive"
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const sendAssessmentNotifications = async (assessmentId) => {
+    try {
+      // Get assessment details
+      const assessment = assessments.find(a => a.id === assessmentId);
+      if (!assessment) return;
+
+      // Get assigned students for this assessment
+      const assignmentsResponse = await apiService.getAssessmentAssignments(assessmentId);
+      if (assignmentsResponse.success && assignmentsResponse.data.length > 0) {
+        // Send notifications to all assigned students
+        const notificationPromises = assignmentsResponse.data.map(assignment => {
+          if (assignment.assignment_type === 'individual') {
+            return apiService.sendAssessmentNotification(assessmentId, assignment.target_id, {
+              type: 'assessment_published',
+              title: 'New Assessment Available',
+              message: `A new assessment "${assessment.title}" has been published and is now available for you to take.`
+            });
+          }
+          return Promise.resolve();
+        });
+
+        await Promise.all(notificationPromises);
+        
+        toast({
+          title: "Notifications Sent",
+          description: `Assessment published and notifications sent to assigned students`,
+        });
+      }
+    } catch (error) {
+      console.error('Error sending assessment notifications:', error);
+      // Don't show error toast here as the status update was successful
+    }
+  };
+
   const handleCopyAssessment = async (copyData) => {
     try {
       setActionLoading(true);
@@ -629,8 +720,16 @@ const AssessmentManagementPage = () => {
         tags: assessmentToCopy.tags && Array.isArray(assessmentToCopy.tags) ? assessmentToCopy.tags : [],
         proctoring_settings: assessmentToCopy.proctoring_settings || {},
         status: 'draft',
-        start_date: copyData.startDate,
-        end_date: copyData.endDate
+        // Proper scheduling structure
+        scheduling: {
+          start_date: copyData.startDate,
+          start_time: copyData.startTime || '09:00',
+          end_date: copyData.endDate,
+          end_time: copyData.endTime || '17:00',
+          timezone: copyData.timezone || 'UTC',
+          early_access_hours: parseInt(copyData.earlyAccessHours) || 0,
+          late_submission_minutes: parseInt(copyData.lateSubmissionMinutes) || 0
+        }
       };
       
       // Create the assessment template
@@ -639,9 +738,7 @@ const AssessmentManagementPage = () => {
         const newAssessmentId = response.data.id;
         
         // Copy all questions from original assessment
-        if (assessmentToCopy.questions && assessmentToCopy.questions.length > 0) {
           await copyAssessmentQuestions(assessmentToCopy.id, newAssessmentId);
-        }
         
         // Assign to students if selected
         if (copyData.selectedStudents && copyData.selectedStudents.length > 0) {
@@ -650,12 +747,16 @@ const AssessmentManagementPage = () => {
         
         // Send reminders if configured
         if (copyData.reminderSettings.sendImmediately) {
-          await sendAssessmentReminders(newAssessmentId, copyData.reminderSettings);
+          await sendAssessmentReminders(newAssessmentId, copyData.reminderSettings, copyData.selectedStudents);
         }
+        
+        // Get question count for success message
+        const questionsResponse = await apiService.getAssessmentQuestionsForAdmin(assessmentToCopy.id);
+        const questionCount = questionsResponse.success ? questionsResponse.data?.length || 0 : 0;
         
         toast({
           title: "Success",
-          description: `Assessment copied successfully${copyData.selectedStudents?.length > 0 ? ` and assigned to ${copyData.selectedStudents.length} students` : ''}`
+          description: `Assessment copied successfully with ${questionCount} questions linked${copyData.selectedStudents?.length > 0 ? ` and assigned to ${copyData.selectedStudents.length} students` : ''}`
         });
         
         loadData();
@@ -676,36 +777,50 @@ const AssessmentManagementPage = () => {
     }
   };
 
+  // Function to generate intelligent test cases based on question content
+  // NOTE: This function provides suggestions only - actual test cases should be created by instructors
+  // Removed hardcoded test data to prevent using mock data in production
+  const generateTestCasesFromQuestion = (questionContent, codeTemplate, question) => {
+    // Return empty array - instructors should create their own test cases
+    // This prevents hardcoded test data from being used in production
+    return [];
+    
+    // Previous hardcoded test case logic removed to prevent mock data usage
+    // If test case generation is needed, it should be done via AI/ML service or manual creation
+  };
+
   const copyAssessmentQuestions = async (originalAssessmentId, newAssessmentId) => {
     try {
-      // Get all questions from original assessment
-      const questionsResponse = await apiService.getAssessmentQuestions(originalAssessmentId);
-      if (questionsResponse.success && questionsResponse.data.length > 0) {
-        // Copy each question to the new assessment
+      // Get all questions from original assessment (using admin API)
+      const questionsResponse = await apiService.getAssessmentQuestionsForAdmin(originalAssessmentId);
+      
+      if (questionsResponse.success && questionsResponse.data && questionsResponse.data.length > 0) {
+        // Link existing questions to the new assessment
+        let copiedCount = 0;
         for (const question of questionsResponse.data) {
-          const questionData = {
-            assessment_id: newAssessmentId,
-            question_text: question.question_text,
-            question_type: question.question_type,
-            points: question.points,
-            difficulty_level: question.difficulty_level,
-            category_id: question.category_id,
-            tags: question.tags || [],
-            options: question.options || [],
-            correct_answer: question.correct_answer,
-            explanation: question.explanation,
-            code_template: question.code_template,
-            test_cases: question.test_cases || [],
-            constraints: question.constraints || '',
-            time_limit: question.time_limit
-          };
-          
-          await apiService.createQuestion(questionData);
+          try {
+            // Add the existing question to the new assessment
+            const addToAssessmentResponse = await apiService.addQuestionToAssessment(
+              newAssessmentId, 
+              question.id, // Use existing question ID
+              null, // section_id - will be added to default section
+              copiedCount + 1, // question_order
+              question.points || 1, // points
+              question.time_limit || null, // time_limit_seconds
+              question.is_required !== false // is_required
+            );
+            
+            if (addToAssessmentResponse.success) {
+              copiedCount++;
+            }
+          } catch (questionError) {
+            console.error('Error linking question to assessment:', questionError);
+          }
         }
       }
     } catch (error) {
       console.error('Error copying questions:', error);
-      throw new Error('Failed to copy questions');
+      // Don't throw error here as assessment copy should still succeed even if questions fail
     }
   };
 
@@ -722,14 +837,49 @@ const AssessmentManagementPage = () => {
     }
   };
 
-  const sendAssessmentReminders = async (assessmentId, reminderSettings) => {
+  const assignAssessmentToAllStudents = async (assessmentId) => {
+    try {
+      // Get all students
+      const studentsResponse = await apiService.getStudents();
+      if (studentsResponse.success && studentsResponse.data.length > 0) {
+        const students = studentsResponse.data;
+        
+        // Assign assessment to all students
+        await assignAssessmentToStudents(assessmentId, students);
+        
+        // Send notifications to all students
+        await sendAssessmentNotifications(assessmentId);
+        
+        toast({
+          title: "Assessment Published",
+          description: `Assessment has been assigned to ${students.length} students and notifications sent`,
+        });
+      } else {
+        toast({
+          title: "No Students Found",
+          description: "No students available to assign this assessment to",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error assigning assessment to all students:', error);
+      toast({
+        title: "Assignment Error",
+        description: "Failed to assign assessment to students, but status was updated",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const sendAssessmentReminders = async (assessmentId, reminderSettings, selectedStudents = null) => {
     try {
       const reminderData = {
         assessment_id: assessmentId,
         send_immediately: reminderSettings.sendImmediately,
         send_before_start: reminderSettings.sendBeforeStart,
         send_before_end: reminderSettings.sendBeforeEnd,
-        custom_message: reminderSettings.customReminderMessage
+        custom_message: reminderSettings.customReminderMessage,
+        student_ids: selectedStudents ? selectedStudents.map(student => student.id) : null
       };
       
       const response = await apiService.sendAssessmentReminders(reminderData);
@@ -794,12 +944,8 @@ const AssessmentManagementPage = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
           <div className="flex-1">
-            <h1 className="text-3xl font-bold tracking-tight">Assessment Management</h1>
-            <p className="text-muted-foreground mt-1">
-              Create and manage assessments and questions
-            </p>
           </div>
-          <div className="flex gap-3 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row gap-3 flex-shrink-0">
             <Button onClick={() => navigate('/assessments/create')} className="whitespace-nowrap">
               <Plus className="mr-2 h-4 w-4" />
               Create Assessment Wizard
@@ -822,14 +968,8 @@ const AssessmentManagementPage = () => {
           <TabsContent value="assessments" className="space-y-6">
             {/* Filters */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Filters & Search
-                </CardTitle>
-              </CardHeader>
               <CardContent>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                <div className="grid mt-4 gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                   <div>
                     <Label htmlFor="search">Search</Label>
                     <Input
@@ -886,8 +1026,26 @@ const AssessmentManagementPage = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-end">
-                    <Button variant="outline" onClick={loadData}>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 sm:space-x-2">
+                    <div className="flex items-center space-x-1 border rounded-md">
+                      <Button
+                        variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setViewMode('cards')}
+                        className="h-8 px-2"
+                      >
+                        <Grid3X3 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant={viewMode === 'list' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setViewMode('list')}
+                        className="h-8 px-2"
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button variant="outline" onClick={loadData} className="h-8">
                       <RefreshCw className="mr-2 h-4 w-4" />
                       Refresh
                     </Button>
@@ -896,115 +1054,288 @@ const AssessmentManagementPage = () => {
               </CardContent>
             </Card>
 
-            {/* Assessments Grid */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {filteredAssessments.map((assessment) => (
-                <motion.div
-                  key={assessment.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Card className="h-full hover:shadow-lg transition-shadow">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center space-x-2">
-                          {getAssessmentTypeIcon(assessment.assessment_type)}
-                          <CardTitle className="text-lg">{assessment.title}</CardTitle>
+            {/* Assessments View */}
+            {viewMode === 'cards' ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {filteredAssessments.map((assessment) => (
+                  <motion.div
+                    key={assessment.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <Card className="h-full hover:shadow-lg transition-shadow">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center space-x-2">
+                            {getAssessmentTypeIcon(assessment.assessment_type)}
+                            <CardTitle className="text-lg">{assessment.title}</CardTitle>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Select
+                              value={assessment.status}
+                              onValueChange={(newStatus) => handleStatusChange(assessment.id, newStatus)}
+                              disabled={actionLoading}
+                            >
+                              <SelectTrigger className="w-28 h-8 text-xs px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="draft">
+                                  <div className="flex items-center space-x-2 py-1">
+                                    <div className="w-3 h-3 rounded-full bg-yellow-500 border border-yellow-600 flex-shrink-0"></div>
+                                    <span>Draft</span>
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="published">
+                                  <div className="flex items-center space-x-2 py-1">
+                                    <div className="w-3 h-3 rounded-full bg-green-500 border border-green-600 flex-shrink-0"></div>
+                                    <span>Published</span>
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="archived">
+                                  <div className="flex items-center space-x-2 py-1">
+                                    <div className="w-3 h-3 rounded-full bg-gray-500 border border-gray-600 flex-shrink-0"></div>
+                                    <span>Archived</span>
+                                  </div>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Badge className={`text-xs ${getTimingStatus(assessment).color}`}>
+                              {getTimingStatus(assessment).text}
+                            </Badge>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge className={getStatusColor(assessment.status)}>
-                            {assessment.status}
-                          </Badge>
-                          <Badge className={`text-xs ${getTimingStatus(assessment).color}`}>
-                            {getTimingStatus(assessment).text}
-                          </Badge>
-                        </div>
-                      </div>
-                      <CardDescription className="line-clamp-2">
-                        {assessment.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Time and Points */}
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center">
-                          <Clock className="mr-1 h-3 w-3" />
-                          {assessment.time_limit_minutes} min
-                        </span>
-                        <span className="flex items-center">
-                          <Target className="mr-1 h-3 w-3" />
-                          {assessment.total_points} pts
-                        </span>
-                      </div>
-
-                      {/* Difficulty and Questions */}
-                      <div className="flex items-center justify-between">
-                        <Badge className={getDifficultyColor(assessment.difficulty_level)}>
-                          {assessment.difficulty_level}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {assessment.question_count || 0} questions
-                        </span>
-                      </div>
-
-                      {/* Start and End Time */}
-                      <div className="space-y-2">
+                        {/* Description hidden as requested */}
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Time and Points */}
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center text-muted-foreground">
-                            <Calendar className="mr-1 h-3 w-3" />
-                            Start:
+                          <span className="flex items-center">
+                            <Clock className="mr-1 h-3 w-3" />
+                            {assessment.time_limit_minutes} min
                           </span>
-                          <span className="text-xs">
-                            {formatDateTime(assessment.start_date_only, assessment.start_time_only)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center text-muted-foreground">
-                            <Calendar className="mr-1 h-3 w-3" />
-                            End:
-                          </span>
-                          <span className="text-xs">
-                            {formatDateTime(assessment.end_date_only, assessment.end_time_only)}
+                          <span className="flex items-center">
+                            <Target className="mr-1 h-3 w-3" />
+                            {assessment.total_points} pts
                           </span>
                         </div>
-                        {getTimingStatus(assessment).status === 'active' && getTimeRemaining(assessment.end_date_only) && (
+
+                        {/* Difficulty and Questions */}
+                        <div className="flex items-center justify-between">
+                          <Badge className={getDifficultyColor(assessment.difficulty_level)}>
+                            {assessment.difficulty_level}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {assessment.question_count || 0} questions
+                          </span>
+                        </div>
+
+                        {/* Start and End Time */}
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="flex items-center text-green-600">
-                              <Clock className="mr-1 h-3 w-3" />
-                              Time Left:
+                            <span className="flex items-center text-muted-foreground">
+                              <Calendar className="mr-1 h-3 w-3" />
+                              Start:
                             </span>
-                            <span className="text-xs text-green-600 font-medium">
-                              {getTimeRemaining(assessment.end_date_only)}
+                            <span className="text-xs">
+                              {formatDateTime(assessment.start_date_only, assessment.start_time_only)}
                             </span>
                           </div>
-                        )}
-                      </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center text-muted-foreground">
+                              <Calendar className="mr-1 h-3 w-3" />
+                              End:
+                            </span>
+                            <span className="text-xs">
+                              {formatDateTime(assessment.end_date_only, assessment.end_time_only)}
+                            </span>
+                          </div>
+                          {getTimingStatus(assessment).status === 'active' && getTimeRemaining(assessment.end_date_only) && (
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="flex items-center text-green-600">
+                                <Clock className="mr-1 h-3 w-3" />
+                                Time Left:
+                              </span>
+                              <span className="text-xs text-green-600 font-medium">
+                                {getTimeRemaining(assessment.end_date_only)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
-                      <Separator />
+                        <Separator />
 
-                      {/* Submissions and Creator */}
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center text-muted-foreground">
-                          <Users className="mr-1 h-3 w-3" />
-                          {assessment.submission_count || 0} submissions
-                        </span>
-                        <span className="text-muted-foreground">
-                          {assessment.creator_name}
-                        </span>
-                      </div>
+                        {/* Submissions and Creator */}
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center text-muted-foreground">
+                            <Users className="mr-1 h-3 w-3" />
+                            {assessment.submission_count || 0} submissions
+                          </span>
+                          <span className="text-muted-foreground">
+                            {assessment.creator_name}
+                          </span>
+                        </div>
 
-                      <div className="flex items-center justify-between">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleViewAssessment(assessment)}
-                          disabled={actionLoading}
-                        >
-                          <Eye className="mr-1 h-3 w-3" />
-                          View
-                        </Button>
-                        <div className="flex space-x-1">
+                        <div className="flex items-center justify-between">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleViewAssessment(assessment)}
+                            disabled={actionLoading}
+                          >
+                            <Eye className="mr-1 h-3 w-3" />
+                            View
+                          </Button>
+                          <div className="flex space-x-1">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleSendReminder(assessment)}
+                              disabled={actionLoading}
+                              title="Send Reminder Email"
+                            >
+                              <Mail className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleEditAssessment(assessment)}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleDuplicateAssessment(assessment)}
+                              disabled={actionLoading}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => openDeleteAssessment(assessment)}
+                              disabled={actionLoading}
+                            >
+                              <Trash className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredAssessments.map((assessment) => (
+                  <motion.div
+                    key={assessment.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <Card className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-4 sm:p-6">
+                        {/* Main content area */}
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                          {/* Assessment info */}
+                          <div className="flex items-start space-x-3 flex-1 min-w-0">
+                            {getAssessmentTypeIcon(assessment.assessment_type)}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-semibold text-lg truncate">{assessment.title}</h3>
+                              {/* Description hidden as requested */}
+                            </div>
+                          </div>
+                          
+                          {/* Status and timing */}
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                            <div className="flex items-center space-x-2">
+                              <Select
+                                value={assessment.status}
+                                onValueChange={(newStatus) => handleStatusChange(assessment.id, newStatus)}
+                                disabled={actionLoading}
+                              >
+                                <SelectTrigger className="w-28 h-8 text-xs px-2">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="draft">
+                                    <div className="flex items-center space-x-2 py-1">
+                                      <div className="w-3 h-3 rounded-full bg-yellow-500 border border-yellow-600 flex-shrink-0"></div>
+                                      <span>Draft</span>
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="published">
+                                    <div className="flex items-center space-x-2 py-1">
+                                      <div className="w-3 h-3 rounded-full bg-green-500 border border-green-600 flex-shrink-0"></div>
+                                      <span>Published</span>
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="archived">
+                                    <div className="flex items-center space-x-2 py-1">
+                                      <div className="w-3 h-3 rounded-full bg-gray-500 border border-gray-600 flex-shrink-0"></div>
+                                      <span>Archived</span>
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Badge className={`text-xs ${getTimingStatus(assessment).color}`}>
+                                {getTimingStatus(assessment).text}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Assessment details */}
+                        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                            <span className="flex items-center">
+                              <Clock className="mr-1 h-4 w-4" />
+                              {assessment.time_limit_minutes} min
+                            </span>
+                            <span className="flex items-center">
+                              <Target className="mr-1 h-4 w-4" />
+                              {assessment.total_points} pts
+                            </span>
+                            <span className="flex items-center">
+                              <Users className="mr-1 h-4 w-4" />
+                              {assessment.submission_count || 0} submissions
+                            </span>
+                            <Badge className={getDifficultyColor(assessment.difficulty_level)}>
+                              {assessment.difficulty_level}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Metadata */}
+                        <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                            <span>Created by: {assessment.creator_name}</span>
+                            <span>Questions: {assessment.question_count || 0}</span>
+                            <span className="hidden sm:inline">Start: {formatDateTime(assessment.start_date_only, assessment.start_time_only)}</span>
+                            <span className="hidden sm:inline">End: {formatDateTime(assessment.end_date_only, assessment.end_time_only)}</span>
+                          </div>
+                          {getTimingStatus(assessment).status === 'active' && getTimeRemaining(assessment.end_date_only) && (
+                            <span className="text-green-600 font-medium">
+                              Time Left: {getTimeRemaining(assessment.end_date_only)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleViewAssessment(assessment)}
+                            disabled={actionLoading}
+                            className="flex-1 sm:flex-none"
+                          >
+                            <Eye className="mr-1 h-3 w-3" />
+                            View
+                          </Button>
                           <Button 
                             variant="outline" 
                             size="sm"
@@ -1038,12 +1369,12 @@ const AssessmentManagementPage = () => {
                             <Trash className="h-3 w-3" />
                           </Button>
                         </div>
-                      </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-    </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            )}
 
             {filteredAssessments.length === 0 && (
               <Card>

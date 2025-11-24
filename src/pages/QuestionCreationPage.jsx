@@ -80,18 +80,56 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const editQuestionId = searchParams.get('edit');
-  
+
   // Determine if we're in edit mode based on props or URL parameter
   const isEditMode = editMode || !!editQuestionId;
-  
+
   // Debug logging
-  console.log('QuestionCreationPage props:', { editMode, questionData, onSuccess });
-  console.log('isEditMode:', isEditMode);
-  
+  // console.log('QuestionCreationPage props:', { editMode, questionData, onSuccess });
+  // console.log('isEditMode:', isEditMode);
+
   // Ensure proper initialization with default values for edit mode
   const initializeQuestion = () => {
-    console.log('initializeQuestion called with isEditMode:', isEditMode, 'questionData:', questionData);
+    // console.log('initializeQuestion called with isEditMode:', isEditMode, 'questionData:', questionData);
     if (isEditMode && questionData) {
+      // Always treat options as an array
+      // Convert from backend format (objects with label/text) to form format (strings)
+      let options = [];
+
+      // First, ensure options is an array (might be JSON string)
+      let optionsArray = questionData.options;
+      if (typeof optionsArray === 'string') {
+        try {
+          optionsArray = JSON.parse(optionsArray);
+        } catch (e) {
+          console.error('Error parsing options JSON:', e);
+          optionsArray = [];
+        }
+      }
+
+      if (Array.isArray(optionsArray) && optionsArray.length > 0) {
+        // Check if options are objects (from backend) or strings (already in form format)
+        if (typeof optionsArray[0] === 'object' && optionsArray[0] !== null) {
+          // Backend format: [{label: 'A', text: '...'}, ...]
+          options = optionsArray.map(opt => opt.text || opt.label || '');
+        } else {
+          // Already in form format: ['Option 1', 'Option 2', ...]
+          options = optionsArray;
+        }
+      } else if (Array.isArray(optionsArray) && optionsArray.length === 0) {
+        // Empty array, use default
+        options = defaultState.options;
+      } else {
+        options = defaultState.options;
+      }
+
+      // Ensure we have at least 2 options
+      if (options.length < 2) {
+        while (options.length < 2) {
+          options.push('');
+        }
+      }
+
       // Ensure correctAnswers is always an array
       let correctAnswers = [];
       if (questionData.correctAnswers && Array.isArray(questionData.correctAnswers)) {
@@ -100,11 +138,32 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
         correctAnswers = questionData.correct_answers;
       } else if (questionData.correct_answer !== null && questionData.correct_answer !== undefined) {
         // Handle single correct answer
-        correctAnswers = [questionData.correct_answer];
+        // For single choice, correct_answer is a label like "A", need to find the index
+        if (questionData.question_type === 'single_choice' && Array.isArray(optionsArray) && optionsArray.length > 0) {
+          // Options from backend are objects with label property: [{label: 'A', text: '...'}, ...]
+          const optionIndex = optionsArray.findIndex(opt => {
+            if (typeof opt === 'object' && opt !== null) {
+              return opt.label === questionData.correct_answer || opt.label === String(questionData.correct_answer);
+            }
+            return false;
+          });
+          if (optionIndex !== -1) {
+            correctAnswers = [optionIndex];
+          } else {
+            // Fallback: if correct_answer is already a number/index, use it
+            const numAnswer = Number(questionData.correct_answer);
+            if (!isNaN(numAnswer) && numAnswer >= 0 && numAnswer < optionsArray.length) {
+              correctAnswers = [numAnswer];
+            } else {
+              // Last resort: use 0 as default
+              correctAnswers = [0];
+            }
+          }
+        } else {
+          // For other types (like true/false), use the value directly
+          correctAnswers = [questionData.correct_answer];
+        }
       }
-
-      // Always treat options as an array
-      let options = Array.isArray(questionData.options) ? questionData.options : defaultState.options;
 
       return {
         ...defaultState,
@@ -169,6 +228,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
     loadSubcategories();
   }, []);
 
+
   // Fetch question data when in edit mode from URL parameter
   useEffect(() => {
     const fetchQuestionData = async () => {
@@ -178,31 +238,146 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           const response = await apiService.get(`/question-bank/questions/${editQuestionId}`);
           if (response.success) {
             const fetchedQuestionData = response.data;
-            
-            // Ensure correctAnswers is always an array
+
+            // Transform options from backend format to frontend format
+            let options = [];
+            let optionsArray = fetchedQuestionData.options;
+
+            // Parse if it's a JSON string
+            if (typeof optionsArray === 'string') {
+              try {
+                optionsArray = JSON.parse(optionsArray);
+              } catch (e) {
+                console.error('Error parsing options JSON:', e);
+                optionsArray = [];
+              }
+            }
+
+            // Transform options based on format
+            if (Array.isArray(optionsArray) && optionsArray.length > 0) {
+              if (typeof optionsArray[0] === 'object' && optionsArray[0] !== null) {
+                // Backend format: [{label: 'A', text: '...'}, ...]
+                options = optionsArray.map(opt => opt.text || opt.label || '');
+              } else {
+                // Already in form format: ['Option 1', 'Option 2', ...]
+                options = optionsArray;
+              }
+            } else {
+              options = defaultState.options;
+            }
+
+            // Ensure at least 2 options for choice questions
+            if (['multiple_choice', 'single_choice'].includes(fetchedQuestionData.question_type)) {
+              while (options.length < 2) {
+                options.push('');
+              }
+            }
+
+            // Transform correctAnswers from backend format to frontend format
             let correctAnswers = [];
+
             if (fetchedQuestionData.correctAnswers && Array.isArray(fetchedQuestionData.correctAnswers)) {
               correctAnswers = fetchedQuestionData.correctAnswers;
             } else if (fetchedQuestionData.correct_answers && Array.isArray(fetchedQuestionData.correct_answers)) {
               correctAnswers = fetchedQuestionData.correct_answers;
             } else if (fetchedQuestionData.correct_answer !== null && fetchedQuestionData.correct_answer !== undefined) {
               // Handle single correct answer
-              correctAnswers = [fetchedQuestionData.correct_answer];
+              if (fetchedQuestionData.question_type === 'single_choice' && Array.isArray(optionsArray) && optionsArray.length > 0) {
+                // For single choice, correct_answer might be a label like "A" or an index
+                if (typeof optionsArray[0] === 'object' && optionsArray[0] !== null) {
+                  // Backend format with labels - find the index
+                  const optionIndex = optionsArray.findIndex(opt =>
+                    opt.label === fetchedQuestionData.correct_answer ||
+                    opt.label === String(fetchedQuestionData.correct_answer)
+                  );
+                  if (optionIndex !== -1) {
+                    correctAnswers = [optionIndex];
+                  } else {
+                    // Fallback: try as numeric index
+                    const numAnswer = Number(fetchedQuestionData.correct_answer);
+                    if (!isNaN(numAnswer) && numAnswer >= 0 && numAnswer < optionsArray.length) {
+                      correctAnswers = [numAnswer];
+                    } else {
+                      correctAnswers = [0];
+                    }
+                  }
+                } else {
+                  // Already numeric index
+                  const numAnswer = Number(fetchedQuestionData.correct_answer);
+                  if (!isNaN(numAnswer)) {
+                    correctAnswers = [numAnswer];
+                  } else {
+                    correctAnswers = [0];
+                  }
+                }
+              } else {
+                // For other types (true/false, etc.), use value directly
+                correctAnswers = [fetchedQuestionData.correct_answer];
+              }
             }
 
-            // Always treat options as an array
-            let options = Array.isArray(fetchedQuestionData.options) ? fetchedQuestionData.options : defaultState.options;
+            // Transform acceptable_answers
+            let acceptable_answers = fetchedQuestionData.acceptable_answers || [''];
+            if (typeof acceptable_answers === 'string') {
+              try {
+                acceptable_answers = JSON.parse(acceptable_answers);
+              } catch (e) {
+                acceptable_answers = [''];
+              }
+            }
+            if (!Array.isArray(acceptable_answers) || acceptable_answers.length === 0) {
+              acceptable_answers = [''];
+            }
+
+            // Transform hints
+            let hints = fetchedQuestionData.hints || [];
+            if (typeof hints === 'string') {
+              try {
+                hints = JSON.parse(hints);
+              } catch (e) {
+                hints = [];
+              }
+            }
+            if (!Array.isArray(hints)) {
+              hints = [];
+            }
+
+            // Transform tags
+            let tags = fetchedQuestionData.tags || [];
+            if (typeof tags === 'string') {
+              try {
+                tags = JSON.parse(tags);
+              } catch (e) {
+                tags = [];
+              }
+            }
+            if (!Array.isArray(tags)) {
+              tags = [];
+            }
+
+            // Transform blanks
+            let blanks = fetchedQuestionData.blanks || [''];
+            if (typeof blanks === 'string') {
+              try {
+                blanks = JSON.parse(blanks);
+              } catch (e) {
+                blanks = [''];
+              }
+            }
+            if (!Array.isArray(blanks) || blanks.length === 0) {
+              blanks = [''];
+            }
 
             setQuestion({
               ...defaultState,
               ...fetchedQuestionData,
-              // Ensure arrays are properly initialized
+              // Use transformed data
               options: options,
               correctAnswers: correctAnswers,
-              acceptable_answers: fetchedQuestionData.acceptable_answers || [''],
-              tags: fetchedQuestionData.tags || [],
-              hints: fetchedQuestionData.hints || [],
-              blanks: fetchedQuestionData.blanks || [''],
+              acceptable_answers: acceptable_answers,
+              tags: tags,
+              hints: hints,
+              blanks: blanks,
               coding_details: fetchedQuestionData.coding_details || defaultState.coding_details
             });
           } else {
@@ -233,6 +408,44 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
   // Update question state when questionData changes (for edit mode)
   useEffect(() => {
     if (editMode && questionData) {
+      // Always treat options as an array
+      // Convert from backend format (objects with label/text) to form format (strings)
+      let options = [];
+
+      // First, ensure options is an array (might be JSON string)
+      let optionsArray = questionData.options;
+      if (typeof optionsArray === 'string') {
+        try {
+          optionsArray = JSON.parse(optionsArray);
+        } catch (e) {
+          console.error('Error parsing options JSON:', e);
+          optionsArray = [];
+        }
+      }
+
+      if (Array.isArray(optionsArray) && optionsArray.length > 0) {
+        // Check if options are objects (from backend) or strings (already in form format)
+        if (typeof optionsArray[0] === 'object' && optionsArray[0] !== null) {
+          // Backend format: [{label: 'A', text: '...'}, ...]
+          options = optionsArray.map(opt => opt.text || opt.label || '');
+        } else {
+          // Already in form format: ['Option 1', 'Option 2', ...]
+          options = optionsArray;
+        }
+      } else if (Array.isArray(optionsArray) && optionsArray.length === 0) {
+        // Empty array, use default
+        options = defaultState.options;
+      } else {
+        options = defaultState.options;
+      }
+
+      // Ensure we have at least 2 options
+      if (options.length < 2) {
+        while (options.length < 2) {
+          options.push('');
+        }
+      }
+
       // Ensure correctAnswers is always an array
       let correctAnswers = [];
       if (questionData.correctAnswers && Array.isArray(questionData.correctAnswers)) {
@@ -241,11 +454,32 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
         correctAnswers = questionData.correct_answers;
       } else if (questionData.correct_answer !== null && questionData.correct_answer !== undefined) {
         // Handle single correct answer
-        correctAnswers = [questionData.correct_answer];
+        // For single choice, correct_answer is a label like "A", need to find the index
+        if (questionData.question_type === 'single_choice' && Array.isArray(optionsArray) && optionsArray.length > 0) {
+          // Options from backend are objects with label property: [{label: 'A', text: '...'}, ...]
+          const optionIndex = optionsArray.findIndex(opt => {
+            if (typeof opt === 'object' && opt !== null) {
+              return opt.label === questionData.correct_answer || opt.label === String(questionData.correct_answer);
+            }
+            return false;
+          });
+          if (optionIndex !== -1) {
+            correctAnswers = [optionIndex];
+          } else {
+            // Fallback: if correct_answer is already a number/index, use it
+            const numAnswer = Number(questionData.correct_answer);
+            if (!isNaN(numAnswer) && numAnswer >= 0 && numAnswer < optionsArray.length) {
+              correctAnswers = [numAnswer];
+            } else {
+              // Last resort: use 0 as default
+              correctAnswers = [0];
+            }
+          }
+        } else {
+          // For other types (like true/false), use the value directly
+          correctAnswers = [questionData.correct_answer];
+        }
       }
-
-      // Always treat options as an array
-      let options = Array.isArray(questionData.options) ? questionData.options : defaultState.options;
 
       setQuestion({
         ...defaultState,
@@ -318,7 +552,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       category_id: q.category_id,
       tags: q.tags,
       // Preserve existing coding_details if switching to coding type and we're in edit mode
-      coding_details: type === 'coding' ? 
+      coding_details: type === 'coding' ?
         (isEditMode && q.coding_details ? q.coding_details : {
           languages: ['javascript'], // Default to javascript for now
           starter_codes: {
@@ -425,7 +659,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       }
       return { ...q, tags };
     });
-    
+
     // Clear search input when a tag is selected
     if (checked) {
       setNewTagName('');
@@ -434,12 +668,12 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
 
   const handleCreateCustomTag = async () => {
     if (!newTagName.trim()) return;
-    
+
     // Check if tag already exists
-    const existingTag = availableTags.find(tag => 
+    const existingTag = availableTags.find(tag =>
       tag.name.toLowerCase() === newTagName.trim().toLowerCase()
     );
-    
+
     if (existingTag) {
       // If tag exists, just select it instead of creating a new one
       if (!question.tags || !question.tags.includes(existingTag.id)) {
@@ -448,7 +682,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       setNewTagName('');
       return;
     }
-    
+
     try {
       const res = await apiService.createQuestionTag({ name: newTagName.trim() });
       if (res.success) {
@@ -458,24 +692,24 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           handleTagChange(res.data.id, true);
         }
         setNewTagName('');
-        toast({ 
-          title: 'Tag created successfully!', 
+        toast({
+          title: 'Tag created successfully!',
           description: `Tag "${newTagName.trim()}" has been added and selected.`,
-          variant: 'default' 
+          variant: 'default'
         });
       } else {
-        toast({ 
-          title: 'Failed to create tag', 
+        toast({
+          title: 'Failed to create tag',
           description: res.message || 'Please try again.',
-          variant: 'destructive' 
+          variant: 'destructive'
         });
       }
     } catch (error) {
       console.error('Error creating tag:', error);
-      toast({ 
-        title: 'Failed to create tag', 
+      toast({
+        title: 'Failed to create tag',
         description: error.message || 'Please try again.',
-        variant: 'destructive' 
+        variant: 'destructive'
       });
     }
   };
@@ -491,77 +725,72 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
 
     try {
       // Show progress toast
-      toast({ 
-        title: 'Verifying test cases...', 
+      toast({
+        title: 'Verifying test cases...',
         description: `Processing ${question.coding_details.test_cases.length} test cases`,
-        variant: 'default' 
+        variant: 'default'
       });
 
-      const results = [];
-      
-      for (let i = 0; i < question.coding_details.test_cases.length; i++) {
-        const testCase = question.coding_details.test_cases[i];
-        
-        // Update progress
-        console.log(`Processing test case ${i + 1}/${question.coding_details.test_cases.length}`);
-        
-        try {
-          // Create a safe execution environment
-          const result = await executeCode(
-            question.coding_details.solution_codes[language],
-            testCase.input,
-            language
-          );
-          
-          const isCorrect = result.output.trim() === testCase.output.trim();
-          
-          results.push({
-            testCaseIndex: i,
-            input: testCase.input,
-            expectedOutput: testCase.output,
-            actualOutput: result.output,
-            isCorrect: isCorrect,
-            error: null,
-            executionTime: result.executionTime || 0
-          });
-        } catch (error) {
-          results.push({
-            testCaseIndex: i,
-            input: testCase.input,
-            expectedOutput: testCase.output,
-            actualOutput: null,
-            isCorrect: false,
-            error: error.message,
-            executionTime: 0
-          });
-        }
+      // Use batch execution endpoint for efficient Docker-based verification
+      const response = await apiService.runTestCases({
+        sourceCode: question.coding_details.solution_codes[language],
+        language: language,
+        testCases: question.coding_details.test_cases.map(tc => ({
+          input: tc.input || '',
+          expectedOutput: tc.output || '',
+          input_data: tc.input || '',
+          expected_output: tc.output || ''
+        }))
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Test case verification failed');
       }
-      
+
+      // Process batch results from Docker service
+      const batchResults = response.data.results || [];
+      const results = batchResults.map((testResult, i) => {
+        const testCase = question.coding_details.test_cases[i];
+        const verdict = testResult.result?.verdict || {};
+        const isCorrect = verdict.status === 'accepted';
+
+        return {
+          testCaseIndex: i,
+          input: testCase.input,
+          expectedOutput: testCase.output,
+          actualOutput: testResult.result?.output || '',
+          isCorrect: isCorrect,
+          error: testResult.result?.error || null,
+          executionTime: testResult.result?.time || 0,
+          memoryUsed: testResult.result?.memory || 0
+        };
+      });
+
       setTestCaseResults(results);
-      
+
       const passedTests = results.filter(r => r.isCorrect).length;
       const totalTests = results.length;
-      
+
       if (passedTests === totalTests) {
-        toast({ 
-          title: 'All test cases passed! ✅', 
+        toast({
+          title: 'All test cases passed! ✅',
           description: `${passedTests}/${totalTests} test cases successful`,
-          variant: 'default' 
+          variant: 'default'
         });
       } else {
-        toast({ 
-          title: 'Some test cases failed! ❌', 
+        toast({
+          title: 'Some test cases failed! ❌',
           description: `${passedTests}/${totalTests} test cases passed`,
-          variant: 'destructive' 
+          variant: 'destructive'
         });
       }
-      
+
     } catch (error) {
       console.error('Error verifying test cases:', error);
-      toast({ 
-        title: 'Failed to verify test cases', 
+      toast({
+        title: 'Failed to verify test cases',
         description: error.message || 'Please check your code and try again.',
-        variant: 'destructive' 
+        variant: 'destructive'
       });
     } finally {
       setIsVerifying(false);
@@ -647,25 +876,25 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           toast({ title: 'Please select at least one programming language for coding questions', variant: 'destructive' });
           return;
         }
-        
+
         // Check if at least one language has starter code
-        const hasStarterCode = (question.coding_details?.languages || []).some(lang => 
+        const hasStarterCode = (question.coding_details?.languages || []).some(lang =>
           (question.coding_details?.starter_codes?.[lang] || '').trim()
         );
         if (!hasStarterCode) {
           toast({ title: 'At least one language must have starter code', variant: 'destructive' });
           return;
         }
-        
+
         // Check if at least one language has solution code
-        const hasSolutionCode = (question.coding_details?.languages || []).some(lang => 
+        const hasSolutionCode = (question.coding_details?.languages || []).some(lang =>
           (question.coding_details?.solution_codes?.[lang] || '').trim()
         );
         if (!hasSolutionCode) {
           toast({ title: 'At least one language must have solution code', variant: 'destructive' });
           return;
         }
-        
+
         if ((question.coding_details?.test_cases || []).length === 0) {
           toast({ title: 'Coding questions must have at least one test case', variant: 'destructive' });
           return;
@@ -738,15 +967,15 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       } else {
         response = await apiService.createQuestion(questionData);
       }
-      
+
       if (response.success) {
         const action = isEditMode ? 'updated' : 'created';
-        toast({ 
-          title: `Question ${action} successfully!`, 
+        toast({
+          title: `Question ${action} successfully!`,
           description: isEditMode ? 'Question has been updated' : `Question ID: ${response.data.id}`,
-          variant: 'default' 
+          variant: 'default'
         });
-        
+
         if (isEditMode && onSuccess) {
           onSuccess(response.data);
         } else if (isEditMode && editQuestionId) {
@@ -762,10 +991,10 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       }
     } catch (error) {
       console.error('Create question error:', error);
-      toast({ 
-        title: 'Failed to create question', 
+      toast({
+        title: 'Failed to create question',
         description: error.message,
-        variant: 'destructive' 
+        variant: 'destructive'
       });
     } finally {
       setLoading(false);
@@ -812,16 +1041,16 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
       setFilteredTags(availableTags);
       return;
     }
-    
-    const matchingTags = availableTags.filter(tag => 
+
+    const matchingTags = availableTags.filter(tag =>
       tag.name.toLowerCase().includes(lowerCaseSearch)
     );
-    
+
     // If no exact match and search term is not empty, show option to create new tag
-    const exactMatch = availableTags.find(tag => 
+    const exactMatch = availableTags.find(tag =>
       tag.name.toLowerCase() === lowerCaseSearch
     );
-    
+
     if (!exactMatch && lowerCaseSearch.length > 0) {
       setFilteredTags([
         ...matchingTags,
@@ -843,21 +1072,21 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block mb-1 font-medium">
-                Question Title 
+                Question Title
                 {question.question_type === 'coding' && <span className="text-red-500">*</span>}
               </label>
-              <Input 
-                value={question.title || ''} 
-                onChange={e => setQuestion(q => ({ ...q, title: e.target.value }))} 
+              <Input
+                value={question.title || ''}
+                onChange={e => setQuestion(q => ({ ...q, title: e.target.value }))}
                 required={question.question_type === 'coding'}
                 placeholder={question.question_type === 'coding' ? "Enter question title (required)" : "Enter question title (optional)"}
               />
             </div>
             <div>
               <label className="block mb-1 font-medium">Question Type</label>
-              <select 
-                value={question.question_type} 
-                onChange={handleTypeChange} 
+              <select
+                value={question.question_type}
+                onChange={handleTypeChange}
                 className="w-full border rounded p-2"
               >
                 {QUESTION_TYPES.map((qt) => (
@@ -870,9 +1099,9 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block mb-1 font-medium">Difficulty Level</label>
-              <select 
-                value={question.difficulty_level} 
-                onChange={e => setQuestion(q => ({ ...q, difficulty_level: e.target.value }))} 
+              <select
+                value={question.difficulty_level}
+                onChange={e => setQuestion(q => ({ ...q, difficulty_level: e.target.value }))}
                 className="w-full border rounded p-2"
               >
                 {DIFFICULTY_LEVELS.map((level) => (
@@ -882,21 +1111,21 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
             </div>
             <div>
               <label className="block mb-1 font-medium">Points</label>
-              <Input 
-                type="number" 
-                min={1} 
-                value={question.points} 
-                onChange={e => setQuestion(q => ({ ...q, points: Number(e.target.value) }))} 
-                required 
+              <Input
+                type="number"
+                min={1}
+                value={question.points}
+                onChange={e => setQuestion(q => ({ ...q, points: Number(e.target.value) }))}
+                required
               />
             </div>
             <div>
               <label className="block mb-1 font-medium">Time Limit (seconds, optional)</label>
-              <Input 
-                type="number" 
-                min={1} 
-                value={question.time_limit_seconds || ''} 
-                onChange={e => setQuestion(q => ({ ...q, time_limit_seconds: e.target.value ? Number(e.target.value) : null }))} 
+              <Input
+                type="number"
+                min={1}
+                value={question.time_limit_seconds || ''}
+                onChange={e => setQuestion(q => ({ ...q, time_limit_seconds: e.target.value ? Number(e.target.value) : null }))}
                 placeholder="No limit"
               />
             </div>
@@ -935,7 +1164,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     if (!newCategoryName.trim()) return;
                     try {
 
-                      const res = await apiService.createQuestionCategory({ 
+                      const res = await apiService.createQuestionCategory({
                         name: newCategoryName,
                         parent_id: null // Ensure it's a main category
                       });
@@ -944,17 +1173,17 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                         setQuestion(q => ({ ...q, category_id: res.data.id }));
                         setNewCategoryName('');
                         setAddingCategory(false);
-                        toast({ 
-                          title: "Success", 
-                          description: "Category created successfully!" 
+                        toast({
+                          title: "Success",
+                          description: "Category created successfully!"
                         });
                       }
                     } catch (error) {
                       console.error('Error creating category:', error);
-                      toast({ 
-                        variant: "destructive", 
-                        title: "Error", 
-                        description: error.message || "Failed to create category" 
+                      toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: error.message || "Failed to create category"
                       });
                     }
                   }}>Add</Button>
@@ -994,9 +1223,9 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     if (!newSubcategoryName.trim()) return;
                     try {
 
-                      const res = await apiService.createQuestionCategory({ 
-                        name: newSubcategoryName, 
-                        parent_id: question.category_id || null 
+                      const res = await apiService.createQuestionCategory({
+                        name: newSubcategoryName,
+                        parent_id: question.category_id || null
                       });
                       if (res.success) {
                         // Refresh subcategories
@@ -1004,17 +1233,17 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                         setQuestion(q => ({ ...q, subcategory_id: res.data.id }));
                         setNewSubcategoryName('');
                         setAddingSubcategory(false);
-                        toast({ 
-                          title: "Success", 
-                          description: "Subcategory created successfully!" 
+                        toast({
+                          title: "Success",
+                          description: "Subcategory created successfully!"
                         });
                       }
                     } catch (error) {
                       console.error('Error creating subcategory:', error);
-                      toast({ 
-                        variant: "destructive", 
-                        title: "Error", 
-                        description: error.message || "Failed to create subcategory" 
+                      toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: error.message || "Failed to create subcategory"
                       });
                     }
                   }}>Add</Button>
@@ -1027,17 +1256,16 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block mb-1 font-medium">Status</label>
-              <Select 
-                value={question.status || 'draft'} 
+              <Select
+                value={question.status || 'draft'}
                 onValueChange={value => setQuestion(q => ({ ...q, status: value }))}
               >
                 <SelectTrigger className="w-full">
                   <div className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      question.status === 'active' ? 'bg-green-500' :
+                    <div className={`w-2 h-2 rounded-full ${question.status === 'active' ? 'bg-green-500' :
                       question.status === 'draft' ? 'bg-yellow-500' :
-                      question.status === 'archived' ? 'bg-gray-600' : 'bg-gray-500'
-                    }`}></div>
+                        question.status === 'archived' ? 'bg-gray-600' : 'bg-gray-500'
+                      }`}></div>
                     <span>{question.status === 'active' ? 'Active' : question.status === 'draft' ? 'Draft' : question.status === 'archived' ? 'Archived' : 'Draft'}</span>
                   </div>
                 </SelectTrigger>
@@ -1065,7 +1293,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
             </div>
             <div>
               <label className="block mb-1 font-medium">Tags</label>
-              
+
               {/* Tags Section - Selected tags above, search below */}
               <div className={`border border-gray-300 rounded-lg p-3 w-full flex flex-col ${newTagName.trim() ? 'h-[200px]' : 'h-auto'}`}>
                 {/* Selected Tags - Above Search */}
@@ -1095,80 +1323,79 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     <span className="text-gray-500 text-sm">No tags selected</span>
                   )}
                 </div>
-                
+
                 {/* Search and Add Tag Input */}
                 <div className="flex gap-2">
-                <Input
-                  placeholder="Search tags or type to create custom tag..."
-                  value={newTagName}
-                  onChange={e => setNewTagName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (newTagName.trim()) {
-                        handleCreateCustomTag();
+                  <Input
+                    placeholder="Search tags or type to create custom tag..."
+                    value={newTagName}
+                    onChange={e => setNewTagName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newTagName.trim()) {
+                          handleCreateCustomTag();
+                        }
                       }
-                    }
-                  }}
-                  className="flex-1"
-                />
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={handleCreateCustomTag}
-                  disabled={!newTagName.trim()}
-                >
-                  Add Tag
-                </Button>
-              </div>
-              
+                    }}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateCustomTag}
+                    disabled={!newTagName.trim()}
+                  >
+                    Add Tag
+                  </Button>
+                </div>
+
                 {/* Available Tags Section - Only show when typing */}
                 {newTagName.trim() && (
                   <div className="mt-3 flex-1 overflow-y-auto">
-                  {filteredTags.length > 0 ? (
+                    {filteredTags.length > 0 ? (
                       <div className="p-3 border border-gray-200 rounded-lg bg-gray-50">
                         <div className="flex flex-wrap gap-2">
                           {filteredTags.map((tag) => {
-                      // Handle "Create new tag" option
-                      if (tag.isNew) {
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            onClick={() => handleCreateCustomTag()}
-                            className="px-3 py-1 rounded-full border-2 border-dashed border-green-500 text-green-700 bg-green-50 hover:bg-green-100 transition-colors text-sm font-medium"
-                          >
-                            {tag.name}
-                          </button>
-                        );
-                      }
-                      
-                      const selected = question.tags && question.tags.includes(tag.id);
-                      return (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          onClick={() => handleTagChange(tag.id, !selected)}
-                          className={`px-3 py-1 rounded-full border transition-colors text-sm font-medium ${
-                            selected 
-                              ? 'bg-purple-600 text-white border-purple-600' 
-                              : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-purple-100'
-                          }`}
-                        >
-                          {tag.name}
-                          {selected && <span className="ml-1">✓</span>}
-                        </button>
-                      );
+                            // Handle "Create new tag" option
+                            if (tag.isNew) {
+                              return (
+                                <button
+                                  key={tag.id}
+                                  type="button"
+                                  onClick={() => handleCreateCustomTag()}
+                                  className="px-3 py-1 rounded-full border-2 border-dashed border-green-500 text-green-700 bg-green-50 hover:bg-green-100 transition-colors text-sm font-medium"
+                                >
+                                  {tag.name}
+                                </button>
+                              );
+                            }
+
+                            const selected = question.tags && question.tags.includes(tag.id);
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                onClick={() => handleTagChange(tag.id, !selected)}
+                                className={`px-3 py-1 rounded-full border transition-colors text-sm font-medium ${selected
+                                  ? 'bg-purple-600 text-white border-purple-600'
+                                  : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-purple-100'
+                                  }`}
+                              >
+                                {tag.name}
+                                {selected && <span className="ml-1">✓</span>}
+                              </button>
+                            );
                           })}
                         </div>
                       </div>
-                  ) : (
+                    ) : (
                       <div className="p-3 border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center h-full">
                         <p className="text-gray-500 text-sm">No matching tags found</p>
                       </div>
-                  )}
-                </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1199,21 +1426,21 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 placeholder="Enter your question here..."
                 required
               />
-              
+
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block font-medium">Options</label>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={addOption}
                     disabled={(question.options || []).length >= 8}
                   >
                     + Add Option
                   </Button>
                 </div>
-                
+
                 <div className="space-y-2">
                   {(question.options || []).map((option, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-3 border rounded-lg bg-gray-50">
@@ -1225,7 +1452,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                           required
                         />
                       </div>
-                      
+
                       <div className="flex items-center gap-2">
                         {question.question_type === 'multiple_choice' ? (
                           <label className="flex items-center gap-1 text-sm">
@@ -1237,19 +1464,19 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                             />
                             Correct
                           </label>
-                                                 ) : (
-                           <label className="flex items-center gap-1 text-sm">
-                             <input
-                               type="radio"
-                               name="correct-answer"
-                               checked={Array.isArray(question.correctAnswers) && question.correctAnswers.includes(idx)}
-                               onChange={() => setQuestion(q => ({ ...q, correctAnswers: [idx] }))}
-                               className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500"
-                             />
-                             Correct
-                           </label>
-                         )}
-                        
+                        ) : (
+                          <label className="flex items-center gap-1 text-sm">
+                            <input
+                              type="radio"
+                              name="correct-answer"
+                              checked={Array.isArray(question.correctAnswers) && question.correctAnswers.includes(idx)}
+                              onChange={() => setQuestion(q => ({ ...q, correctAnswers: [idx] }))}
+                              className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500"
+                            />
+                            Correct
+                          </label>
+                        )}
+
                         {(question.options || []).length > 2 && (
                           <Button
                             type="button"
@@ -1265,11 +1492,11 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     </div>
                   ))}
                 </div>
-                
+
                 {(question.options || []).length < 2 && (
                   <p className="text-sm text-red-600 mt-1">At least 2 options are required</p>
                 )}
-                
+
                 {(!Array.isArray(question.correctAnswers) || question.correctAnswers.length === 0) && (
                   <p className="text-sm text-red-600 mt-1">Please select at least one correct answer</p>
                 )}
@@ -1288,7 +1515,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 placeholder="Enter your True/False question here..."
                 required
               />
-              
+
               <div className="mt-4">
                 <label className="block mb-2 font-medium">Correct Answer</label>
                 <div className="flex gap-4">
@@ -1313,7 +1540,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     False
                   </label>
                 </div>
-                
+
                 {(!Array.isArray(question.correctAnswers) || question.correctAnswers.length === 0) && (
                   <p className="text-sm text-red-600 mt-1">Please select the correct answer</p>
                 )}
@@ -1332,7 +1559,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 placeholder="Enter your short answer question here..."
                 required
               />
-              
+
               <div className="mt-4">
                 <label className="block mb-2 font-medium">Acceptable Answers</label>
                 <div className="space-y-2">
@@ -1391,7 +1618,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 placeholder="Enter your essay question here..."
                 required
               />
-              
+
               <div className="mt-4">
                 <label className="block mb-1 font-medium">Rubric / Grading Guidelines</label>
                 <Textarea
@@ -1415,7 +1642,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 placeholder="Enter your coding problem description here..."
                 required
               />
-              
+
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="block mb-1 font-medium">Programming Languages <span className="text-red-500">*</span></label>
@@ -1460,11 +1687,10 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                               }));
                             }
                           }}
-                          className={`px-3 py-1 rounded-full border transition-colors text-sm font-medium ${
-                            isSelected 
-                              ? 'bg-blue-600 text-white border-blue-600' 
-                              : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-blue-100'
-                          }`}
+                          className={`px-3 py-1 rounded-full border transition-colors text-sm font-medium ${isSelected
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-blue-100'
+                            }`}
                         >
                           {lang.label}
                           {isSelected && <span className="ml-1">✓</span>}
@@ -1476,7 +1702,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     <p className="text-sm text-red-600 mt-1">Please select at least one programming language</p>
                   )}
                 </div>
-                
+
                 {question.coding_details.languages.length > 0 && (
                   <div>
                     <label className="block mb-1 font-medium">Code Implementation</label>
@@ -1493,17 +1719,16 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 activeLanguage: lang
                               }
                             }))}
-                            className={`px-4 py-2 text-sm font-medium border-r ${
-                              (question.coding_details.activeLanguage || question.coding_details.languages[0]) === lang
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                            }`}
+                            className={`px-4 py-2 text-sm font-medium border-r ${(question.coding_details.activeLanguage || question.coding_details.languages[0]) === lang
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                              }`}
                           >
                             {lang.charAt(0).toUpperCase() + lang.slice(1)}
                           </button>
                         ))}
                       </div>
-                      
+
                       {question.coding_details.languages.map((lang) => {
                         const isActive = (question.coding_details.activeLanguage || question.coding_details.languages[0]) === lang;
                         return isActive ? (
@@ -1516,10 +1741,10 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 </div>
                                 <CodeEditor
                                   value={question.coding_details.starter_codes[lang] || ''}
-                                  onChange={(value) => setQuestion(q => ({ 
-                                    ...q, 
-                                    coding_details: { 
-                                      ...q.coding_details, 
+                                  onChange={(value) => setQuestion(q => ({
+                                    ...q,
+                                    coding_details: {
+                                      ...q.coding_details,
                                       starter_codes: {
                                         ...q.coding_details.starter_codes,
                                         [lang]: value
@@ -1539,7 +1764,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 />
                               </div>
                             </div>
-                            
+
                             <div>
                               <label className="block mb-1 font-medium">Solution Code <span className="text-red-500">*</span></label>
                               <div className="flex gap-2 mb-2">
@@ -1549,10 +1774,10 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                   </div>
                                   <CodeEditor
                                     value={question.coding_details.solution_codes[lang] || ''}
-                                    onChange={(value) => setQuestion(q => ({ 
-                                      ...q, 
-                                      coding_details: { 
-                                        ...q.coding_details, 
+                                    onChange={(value) => setQuestion(q => ({
+                                      ...q,
+                                      coding_details: {
+                                        ...q.coding_details,
                                         solution_codes: {
                                           ...q.coding_details.solution_codes,
                                           [lang]: value
@@ -1571,9 +1796,9 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                     }}
                                   />
                                 </div>
-                                <Button 
-                                  type="button" 
-                                  variant="outline" 
+                                <Button
+                                  type="button"
+                                  variant="outline"
                                   size="sm"
                                   onClick={() => handleVerifyTestCases(lang)}
                                   disabled={!question.coding_details.solution_codes[lang]?.trim() || !question.coding_details.test_cases || question.coding_details.test_cases.length === 0 || isVerifying}
@@ -1589,19 +1814,19 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     </div>
                   </div>
                 )}
-                
+
                 {/* Test Cases Section */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block font-medium">Test Cases</label>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         const newTestCases = [...(question.coding_details.test_cases || []), { input: '', output: '', description: '' }];
-                        setQuestion(q => ({ 
-                          ...q, 
+                        setQuestion(q => ({
+                          ...q,
                           coding_details: { ...q.coding_details, test_cases: newTestCases }
                         }));
                       }}
@@ -1609,7 +1834,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                       + Add Test Case
                     </Button>
                   </div>
-                  
+
                   <div className="space-y-3">
                     {(question.coding_details.test_cases || []).map((testCase, idx) => (
                       <div key={idx} className="border rounded-lg p-4 bg-gray-50">
@@ -1621,8 +1846,8 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                             size="sm"
                             onClick={() => {
                               const newTestCases = (question.coding_details.test_cases || []).filter((_, i) => i !== idx);
-                              setQuestion(q => ({ 
-                                ...q, 
+                              setQuestion(q => ({
+                                ...q,
                                 coding_details: { ...q.coding_details, test_cases: newTestCases }
                               }));
                             }}
@@ -1631,7 +1856,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                             Remove
                           </Button>
                         </div>
-                        
+
                         <div className="space-y-3">
                           <div>
                             <label className="block text-sm font-medium mb-1">Description (Optional)</label>
@@ -1640,15 +1865,15 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                               onChange={e => {
                                 const newTestCases = [...(question.coding_details.test_cases || [])];
                                 newTestCases[idx] = { ...newTestCases[idx], description: e.target.value };
-                                setQuestion(q => ({ 
-                                  ...q, 
+                                setQuestion(q => ({
+                                  ...q,
                                   coding_details: { ...q.coding_details, test_cases: newTestCases }
                                 }));
                               }}
                               placeholder="e.g., Basic case, edge case, large input..."
                             />
                           </div>
-                          
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-sm font-medium mb-1">Input</label>
@@ -1657,8 +1882,8 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 onChange={e => {
                                   const newTestCases = [...(question.coding_details.test_cases || [])];
                                   newTestCases[idx] = { ...newTestCases[idx], input: e.target.value };
-                                  setQuestion(q => ({ 
-                                    ...q, 
+                                  setQuestion(q => ({
+                                    ...q,
                                     coding_details: { ...q.coding_details, test_cases: newTestCases }
                                   }));
                                 }}
@@ -1666,7 +1891,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 placeholder="e.g., [1,2,3]&#10;4&#10;5 or multi-line input"
                               />
                             </div>
-                            
+
                             <div>
                               <label className="block text-sm font-medium mb-1">Expected Output</label>
                               <Textarea
@@ -1674,8 +1899,8 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                                 onChange={e => {
                                   const newTestCases = [...(question.coding_details.test_cases || [])];
                                   newTestCases[idx] = { ...newTestCases[idx], output: e.target.value };
-                                  setQuestion(q => ({ 
-                                    ...q, 
+                                  setQuestion(q => ({
+                                    ...q,
                                     coding_details: { ...q.coding_details, test_cases: newTestCases }
                                   }));
                                 }}
@@ -1687,7 +1912,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                         </div>
                       </div>
                     ))}
-                    
+
                     {(question.coding_details.test_cases || []).length === 0 && (
                       <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
                         <p className="text-gray-500 text-sm">No test cases added yet.</p>
@@ -1696,23 +1921,22 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                     )}
                   </div>
                 </div>
-                
+
                 {/* Test Case Verification Results */}
                 {testCaseResults.length > 0 && (
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-3">
                       <label className="block font-medium">Verification Results</label>
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-medium ${
-                          testCaseResults.every(r => r.isCorrect) 
-                            ? 'text-green-600' 
-                            : 'text-red-600'
-                        }`}>
+                        <span className={`text-sm font-medium ${testCaseResults.every(r => r.isCorrect)
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                          }`}>
                           {testCaseResults.filter(r => r.isCorrect).length}/{testCaseResults.length} passed
                         </span>
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="sm"
                           onClick={() => handleVerifyTestCases(question.coding_details.activeLanguage || question.coding_details.languages[0])}
                           disabled={isVerifying}
@@ -1721,16 +1945,14 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-3">
                       {testCaseResults.map((result, idx) => (
-                        <div key={idx} className={`border rounded-lg p-4 ${
-                          result.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                        }`}>
+                        <div key={idx} className={`border rounded-lg p-4 ${result.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                          }`}>
                           <div className="flex items-center justify-between mb-3">
-                            <h4 className={`font-medium text-sm ${
-                              result.isCorrect ? 'text-green-700' : 'text-red-700'
-                            }`}>
+                            <h4 className={`font-medium text-sm ${result.isCorrect ? 'text-green-700' : 'text-red-700'
+                              }`}>
                               Test Case {result.testCaseIndex + 1} - {result.isCorrect ? '✅ PASSED' : '❌ FAILED'}
                             </h4>
                             {result.executionTime > 0 && (
@@ -1739,7 +1961,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                               </span>
                             )}
                           </div>
-                          
+
                           <div className="space-y-2 text-sm">
                             <div><b>Input:</b><pre className="bg-white p-2 rounded mt-1 text-xs border">{result.input || 'None'}</pre></div>
                             <div><b>Expected Output:</b><pre className="bg-white p-2 rounded mt-1 text-xs border">{result.expectedOutput || 'None'}</pre></div>
@@ -1812,9 +2034,9 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
 
           <div className="mb-4">
             <label className="block mb-1 font-medium">Explanation (optional)</label>
-            <Textarea 
-              value={question.explanation || ''} 
-              onChange={e => setQuestion(q => ({ ...q, explanation: e.target.value }))} 
+            <Textarea
+              value={question.explanation || ''}
+              onChange={e => setQuestion(q => ({ ...q, explanation: e.target.value }))}
               rows={3}
               placeholder="Enter explanation for the correct answer..."
             />
@@ -1822,11 +2044,11 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
 
           <div className="flex gap-4">
             <Button type="submit" disabled={loading}>
-                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Question' : 'Create Question')}
-        </Button>
-                      <Button type="button" variant="secondary" onClick={() => setQuestion(isEditMode && questionData ? questionData : defaultState)}>
-                {isEditMode ? 'Reset Changes' : 'Reset'}
-              </Button>
+              {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Question' : 'Create Question')}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setQuestion(isEditMode && questionData ? questionData : defaultState)}>
+              {isEditMode ? 'Reset Changes' : 'Reset'}
+            </Button>
             <Button type="button" variant="outline" onClick={() => setPreview(!preview)}>
               {preview ? 'Hide Preview' : 'Show Preview'}
             </Button>
@@ -1843,7 +2065,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
             <div><b>Difficulty:</b> {DIFFICULTY_LEVELS.find(d => d.value === question.difficulty_level)?.label}</div>
             <div><b>Points:</b> {question.points}</div>
             <div><b>Content:</b> {question.content || 'No content'}</div>
-            
+
             {['multiple_choice', 'single_choice'].includes(question.question_type) && (
               <div>
                 <b>Options:</b>
@@ -1856,11 +2078,11 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 </ul>
               </div>
             )}
-            
+
             {question.question_type === 'true_false' && (
               <div><b>Correct:</b> {(question.correctAnswers || [])[0] === true ? 'True' : (question.correctAnswers || [])[0] === false ? 'False' : 'Not set'}</div>
             )}
-            
+
             {question.question_type === 'short_answer' && (
               <div>
                 <b>Acceptable Answers:</b>
@@ -1871,7 +2093,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 </ul>
               </div>
             )}
-            
+
             {question.question_type === 'coding' && (
               <>
                 <div><b>Languages:</b> {(question.coding_details?.languages || []).map(lang => lang.charAt(0).toUpperCase() + lang.slice(1)).join(', ')}</div>
@@ -1899,7 +2121,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 </div>
               </>
             )}
-            
+
             {question.question_type === 'fill_blanks' && (
               <div>
                 <b>Preview:</b>
@@ -1925,7 +2147,7 @@ export default function QuestionCreationPage({ editMode = false, questionData = 
                 </div>
               </div>
             )}
-            
+
             {question.explanation && <div><b>Explanation:</b> {question.explanation}</div>}
           </div>
         </Card>

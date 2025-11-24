@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import { validateCSRFToken } from '../middleware/csrf.js';
 import {
   getDashboardStats
 } from '../controllers/superAdminController.js';
@@ -49,23 +50,23 @@ router.get('/colleges/:collegeId/departments', getCollegeDepartments);
 router.get('/colleges/:collegeId/batches', getCollegeBatches);
 router.get('/colleges/:collegeId/stats', getCollegeStats);
 router.get('/colleges/:collegeId', getCollegeById);
-router.post('/colleges', createCollege);
-router.put('/colleges/:collegeId', updateCollege);
-router.delete('/colleges/:collegeId', deleteCollege);
+router.post('/colleges', validateCSRFToken, createCollege);
+router.put('/colleges/:collegeId', validateCSRFToken, updateCollege);
+router.delete('/colleges/:collegeId', validateCSRFToken, deleteCollege);
 
 // Enhanced college management routes
-router.patch('/colleges/:collegeId/restore', restoreCollege);
+router.patch('/colleges/:collegeId/restore', validateCSRFToken, restoreCollege);
 router.get('/colleges/deleted/list', getDeletedColleges);
 router.get('/colleges/:collegeId/deletion-status', getCollegeDeletionStatus);
 
 // User management routes
 router.get('/users', listUsers);
 router.get('/users/:userId', getUserById);
-router.post('/users', addUser);
-router.put('/users/:userId', editUser);
-router.delete('/users/:userId', deleteUser);
-router.patch('/users/:userId/toggle-status', toggleUserStatus);
+router.post('/users', validateCSRFToken, addUser);
+router.put('/users/:userId', validateCSRFToken, editUser);
+router.delete('/users/:userId', validateCSRFToken, deleteUser);
+router.patch('/users/:userId/toggle-status', validateCSRFToken, toggleUserStatus);
 router.get('/users/template/student', downloadTemplate);
-router.post('/users/bulk-upload', bulkUploadUsers);
+router.post('/users/bulk-upload', validateCSRFToken, bulkUploadUsers);
 
 export default router; 

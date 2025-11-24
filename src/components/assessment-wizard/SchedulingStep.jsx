@@ -219,13 +219,6 @@ export default function SchedulingStep({ formData, updateFormData }) {
       {/* Timezone Selection */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Assessment Timezone
-          </CardTitle>
-          <CardDescription>
-            Select the timezone for the assessment. Students will see times converted to their local timezone.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <div>

@@ -258,7 +258,7 @@ export default function ReviewStep({ formData, calculateTotalPoints, colleges })
                   <div>
                     <label className="text-sm font-medium text-gray-600">Multi-Type Sections</label>
                     <p className="text-sm">
-                      {formData.sections.filter(s => s.allowed_question_types.length > 1).length} of {formData.sections.length} sections
+                      {formData.sections.filter(s => (s.allowed_question_types || []).length > 1).length} of {formData.sections.length} sections
                     </p>
                   </div>
                 </>
@@ -418,10 +418,11 @@ export default function ReviewStep({ formData, calculateTotalPoints, colleges })
             <div className="space-y-3">
               {formData.sections.map((section, index) => {
                 const getSectionTypeIcon = (section) => {
-                  const hasCoding = section.allowed_question_types.includes('coding');
-                  const hasMCQ = section.allowed_question_types.includes('multiple_choice') || 
-                                 section.allowed_question_types.includes('single_choice') ||
-                                 section.allowed_question_types.includes('true_false');
+                  const allowedTypes = section.allowed_question_types || [];
+                  const hasCoding = allowedTypes.includes('coding');
+                  const hasMCQ = allowedTypes.includes('multiple_choice') || 
+                                 allowedTypes.includes('single_choice') ||
+                                 allowedTypes.includes('true_false');
                   
                   if (hasCoding && hasMCQ) return '🔗'; // Multi-type
                   if (hasCoding) return '💻'; // Coding only
@@ -430,7 +431,7 @@ export default function ReviewStep({ formData, calculateTotalPoints, colleges })
                 };
 
                 const getSectionTypeLabel = (section) => {
-                  const types = section.allowed_question_types;
+                  const types = section.allowed_question_types || [];
                   const typeLabels = [];
                   
                   if (types.includes('coding')) typeLabels.push('Coding');
@@ -503,7 +504,7 @@ export default function ReviewStep({ formData, calculateTotalPoints, colleges })
                       {section.allow_return_to_section && (
                         <Badge variant="secondary" className="text-xs">Allow Return</Badge>
                       )}
-                      {section.allowed_question_types.length > 1 && (
+                      {(section.allowed_question_types || []).length > 1 && (
                         <Badge variant="default" className="text-xs">Multi-Type</Badge>
                       )}
                     </div>

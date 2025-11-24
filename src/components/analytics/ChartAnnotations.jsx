@@ -91,14 +91,14 @@ const ChartAnnotations = ({ annotations, module, filters }) => {
 
   const handleAddAnnotation = () => {
     // This would typically call an API to add the annotation
-    console.log('Adding annotation:', newAnnotation);
+    // console.log('Adding annotation:', newAnnotation);
     setShowAddDialog(false);
     setNewAnnotation({ title: '', comment: '', chartType: '', dataPoint: '' });
   };
 
   const handleDeleteAnnotation = (annotationId) => {
     // This would typically call an API to delete the annotation
-    console.log('Deleting annotation:', annotationId);
+    // console.log('Deleting annotation:', annotationId);
   };
 
   const filteredAnnotations = annotations.filter(annotation => {

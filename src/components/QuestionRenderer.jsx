@@ -1,200 +1,351 @@
-import React, { useState, useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import CodeEditor from '@/components/ui/code-editor';
-import TestCaseManager from '@/components/ui/test-case-manager';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Checkbox } from '../components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
 import { 
-  CheckCircle, 
-  Clock, 
   Code, 
   FileText, 
-  Hash,
-  Target,
-  AlertCircle
+  CheckSquare, 
+  Square, 
+  Type,
+  Hash
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
-const QuestionRenderer = ({ 
-  question, 
-  answer, 
-  onAnswerChange, 
-  isReadOnly = false,
-  showCorrectAnswer = false 
-}) => {
-  const [selectedLanguage, setSelectedLanguage] = useState('javascript');
-  const [testResults, setTestResults] = useState(null);
-  const [isRunningTests, setIsRunningTests] = useState(false);
+const QuestionRenderer = ({ question, answer, onAnswerChange, onSave }) => {
+  const [localAnswer, setLocalAnswer] = useState(answer || '');
+  const [isDirty, setIsDirty] = useState(false);
 
-  const getQuestionTypeIcon = (type) => {
-    switch (type) {
-      case 'multiple_choice':
-      case 'single_choice':
-        return <CheckCircle className="h-5 w-5" />;
-      case 'true_false':
-        return <CheckCircle className="h-5 w-5" />;
-      case 'short_answer':
-        return <FileText className="h-5 w-5" />;
-      case 'essay':
-        return <FileText className="h-5 w-5" />;
-      case 'coding':
-        return <Code className="h-5 w-5" />;
-      case 'fill_blanks':
-        return <Hash className="h-5 w-5" />;
-      default:
-        return <Target className="h-5 w-5" />;
+  useEffect(() => {
+    setLocalAnswer(answer || '');
+    setIsDirty(false);
+  }, [answer, question?.id]);
+
+  const handleAnswerChange = useCallback((newAnswer) => {
+    // Validate answer format based on question type
+    if (question && question.question_type) {
+      const questionType = question.question_type;
+      
+      // Basic validation per question type
+      if (questionType === 'multiple_choice' || questionType === 'single_choice') {
+        if (newAnswer && typeof newAnswer === 'object' && newAnswer.selected_options) {
+          if (!Array.isArray(newAnswer.selected_options)) {
+            console.warn('Invalid answer format for multiple choice');
+            return;
+          }
+        }
+      } else if (questionType === 'true_false') {
+        if (newAnswer && typeof newAnswer !== 'string' && typeof newAnswer !== 'boolean') {
+          console.warn('Invalid answer format for true/false');
+          return;
+        }
+      } else if (questionType === 'essay' || questionType === 'short_answer') {
+        if (newAnswer && typeof newAnswer === 'object' && newAnswer.student_answer) {
+          if (typeof newAnswer.student_answer !== 'string') {
+            console.warn('Invalid answer format for text question');
+            return;
+          }
+        }
+      }
     }
+    
+    setLocalAnswer(newAnswer);
+    setIsDirty(true);
+    if (onAnswerChange) {
+      onAnswerChange(newAnswer);
+    }
+  }, [question, onAnswerChange]);
+
+  const handleSave = () => {
+    if (onSave) {
+      onSave();
+    }
+    setIsDirty(false);
+    toast.success('Answer saved');
   };
 
-  const getQuestionTypeLabel = (type) => {
-    switch (type) {
-      case 'multiple_choice':
-        return 'Multiple Choice';
-      case 'single_choice':
-        return 'Single Choice';
-      case 'true_false':
-        return 'True/False';
-      case 'short_answer':
-        return 'Short Answer';
-      case 'essay':
-        return 'Essay';
-      case 'coding':
-        return 'Coding';
-      case 'fill_blanks':
-        return 'Fill in the Blanks';
-      default:
-        return type;
-    }
+  const getQuestionIcon = (question_type) => {
+    const icons = {
+      multiple_choice: CheckSquare,
+      true_false: Square,
+      short_answer: Type,
+      essay: FileText,
+      fill_blank: Hash,
+      coding: Code
+    };
+    return icons[question_type] || FileText;
   };
 
   const renderMultipleChoice = () => {
+    const Icon = getQuestionIcon('multiple_choice');
     const options = question.options || [];
-    const isMultiple = question.question_type === 'multiple_choice';
-    
-    if (isMultiple) {
-      const selectedAnswers = answer || [];
-      
-      return (
-        <div className="space-y-3">
-          {options.map((option, index) => (
-            <div key={index} className="flex items-center space-x-3">
-              <Checkbox
-                id={`option-${index}`}
-                checked={selectedAnswers.includes(option)}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    onAnswerChange([...selectedAnswers, option]);
-                  } else {
-                    onAnswerChange(selectedAnswers.filter(a => a !== option));
-                  }
-                }}
-                disabled={isReadOnly}
-              />
-              <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                {option}
-              </Label>
-              {showCorrectAnswer && question.correct_answers?.includes(option) && (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              )}
-            </div>
-          ))}
+    const selectedOptions = localAnswer?.selected_options || [];
+
+    // Debug logging
+    console.log('MCQ Question Data:', {
+      question: question,
+      options: options,
+      optionsType: typeof options,
+      optionsLength: Array.isArray(options) ? options.length : 'Not an array'
+    });
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Multiple Choice</span>
+          <Badge variant="outline">{question.points} points</Badge>
         </div>
-      );
-    } else {
-      return (
-        <RadioGroup
-          value={answer || ''}
-          onValueChange={onAnswerChange}
-          disabled={isReadOnly}
-        >
-          {options.map((option, index) => (
-            <div key={index} className="flex items-center space-x-3">
-              <RadioGroupItem value={option} id={`option-${index}`} />
-              <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                {option}
-              </Label>
-              {showCorrectAnswer && question.correct_answer === option && (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              )}
+        
+        <div className="space-y-3">
+          {options.length === 0 ? (
+            <div className="text-center text-gray-500 py-4">
+              No options available for this question
             </div>
-          ))}
-        </RadioGroup>
-      );
-    }
+          ) : (
+            options.map((option, index) => {
+              // Handle different option structures
+              const optionId = option.id || option.option_id || index;
+              const optionText = option.text || option.option_text || option.content || option;
+              const isChecked = selectedOptions.includes(optionId);
+              
+              return (
+                <div key={index} className="flex items-center space-x-3">
+                  <Checkbox
+                    id={`option-${index}`}
+                    checked={isChecked}
+                    onCheckedChange={(checked) => {
+                      let newSelectedOptions;
+                      if (checked) {
+                        newSelectedOptions = [...selectedOptions, optionId];
+                      } else {
+                        newSelectedOptions = selectedOptions.filter(id => id !== optionId);
+                      }
+                      handleAnswerChange({
+                        ...localAnswer,
+                        selected_options: newSelectedOptions
+                      });
+                    }}
+                  />
+                  <Label 
+                    htmlFor={`option-${index}`}
+                    className="flex-1 cursor-pointer"
+                  >
+                    {optionText}
+                  </Label>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
   };
 
   const renderTrueFalse = () => {
-    const options = ['True', 'False'];
-    
+    const Icon = getQuestionIcon('true_false');
+    const selectedValue = localAnswer?.student_answer;
+
     return (
-      <RadioGroup
-        value={answer || ''}
-        onValueChange={onAnswerChange}
-        disabled={isReadOnly}
-      >
-        {options.map((option, index) => (
-          <div key={index} className="flex items-center space-x-3">
-            <RadioGroupItem value={option} id={`tf-${index}`} />
-            <Label htmlFor={`tf-${index}`} className="flex-1 cursor-pointer">
-              {option}
-            </Label>
-            {showCorrectAnswer && question.correct_answer === option && (
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            )}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">True/False</span>
+          <Badge variant="outline">{question.points} points</Badge>
+        </div>
+        
+        <RadioGroup
+          value={selectedValue}
+          onValueChange={(value) => handleAnswerChange({
+            ...localAnswer,
+            student_answer: value
+          })}
+        >
+          <div className="flex items-center space-x-3">
+            <RadioGroupItem value="true" id="true" />
+            <Label htmlFor="true" className="cursor-pointer">True</Label>
           </div>
-        ))}
-      </RadioGroup>
+          <div className="flex items-center space-x-3">
+            <RadioGroupItem value="false" id="false" />
+            <Label htmlFor="false" className="cursor-pointer">False</Label>
+          </div>
+        </RadioGroup>
+      </div>
     );
   };
 
   const renderShortAnswer = () => {
+    const Icon = getQuestionIcon('short_answer');
+    const value = localAnswer?.student_answer || '';
+
     return (
-      <div className="space-y-2">
-        <Textarea
-          value={answer || ''}
-          onChange={(e) => onAnswerChange(e.target.value)}
-          placeholder="Enter your answer..."
-          className="min-h-[100px]"
-          disabled={isReadOnly}
-        />
-        <div className="text-sm text-muted-foreground">
-          {answer?.length || 0} characters
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Short Answer</span>
+          <Badge variant="outline">{question.points} points</Badge>
         </div>
-        {showCorrectAnswer && question.correct_answers && (
-          <div className="mt-2 p-3 bg-green-50 rounded-lg">
-            <div className="text-sm font-medium text-green-800">Acceptable answers:</div>
-            <ul className="text-sm text-green-700 mt-1">
-              {question.correct_answers.map((ans, index) => (
-                <li key={index}>• {ans}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        
+        <Input
+          value={value}
+          onChange={(e) => handleAnswerChange({
+            ...localAnswer,
+            student_answer: e.target.value
+          })}
+          placeholder="Enter your answer here..."
+          className="w-full"
+        />
       </div>
     );
   };
 
   const renderEssay = () => {
+    const Icon = getQuestionIcon('essay');
+    const value = localAnswer?.student_answer || '';
+    const wordCount = value.split(' ').filter(word => word.length > 0).length;
+    const charCount = value.length;
+    
+    // Get limits from question metadata or use defaults
+    const maxWords = question.metadata?.max_words || question.max_words || null;
+    const maxChars = question.metadata?.max_characters || question.max_characters || null;
+    const minWords = question.metadata?.min_words || question.min_words || 0;
+
     return (
-      <div className="space-y-2">
-        <Textarea
-          value={answer || ''}
-          onChange={(e) => onAnswerChange(e.target.value)}
-          placeholder="Write your essay answer..."
-          className="min-h-[200px]"
-          disabled={isReadOnly}
-        />
-        <div className="text-sm text-muted-foreground">
-          {answer?.length || 0} characters
+      <div className="space-y-3" role="group" aria-label="Essay question">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" aria-hidden="true" />
+          <span className="text-sm font-medium text-gray-600">Essay Question</span>
+          <Badge variant="outline">{question.points} points</Badge>
         </div>
-        {showCorrectAnswer && question.metadata?.rubric && (
-          <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-            <div className="text-sm font-medium text-blue-800">Rubric/Guidelines:</div>
-            <div className="text-sm text-blue-700 mt-1 whitespace-pre-wrap">
-              {question.metadata.rubric}
+        
+        <Textarea
+          value={value}
+          onChange={(e) => {
+            const newValue = e.target.value;
+            // Enforce character limit if specified
+            if (maxChars && newValue.length > maxChars) {
+              return; // Don't allow typing beyond limit
+            }
+            handleAnswerChange({
+              ...localAnswer,
+              student_answer: newValue
+            });
+          }}
+          placeholder="Write your essay here..."
+          className="w-full min-h-[200px]"
+          rows={8}
+          maxLength={maxChars || undefined}
+          aria-label="Essay answer input"
+          aria-describedby="essay-helper-text"
+        />
+        
+        <div 
+          id="essay-helper-text"
+          className="text-sm flex items-center gap-4"
+          role="status"
+          aria-live="polite"
+        >
+          <span className={wordCount > (maxWords || Infinity) ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+            Words: {wordCount}
+            {maxWords && ` / ${maxWords} max`}
+            {minWords > 0 && ` (${minWords} min required)`}
+          </span>
+          {maxChars && (
+            <span className={charCount > maxChars ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+              Characters: {charCount} / {maxChars} max
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderFillBlank = () => {
+    const Icon = getQuestionIcon('fill_blank');
+    const value = localAnswer?.student_answer || '';
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Fill in the Blank</span>
+          <Badge variant="outline">{question.points} points</Badge>
+        </div>
+        
+        <Input
+          value={value}
+          onChange={(e) => handleAnswerChange({
+            ...localAnswer,
+            student_answer: e.target.value
+          })}
+          placeholder="Enter your answer here..."
+          className="w-full"
+        />
+      </div>
+    );
+  };
+
+  const renderCoding = () => {
+    const Icon = getQuestionIcon('coding');
+    const value = localAnswer?.student_answer || '';
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Coding Question</span>
+          <Badge variant="outline">{question.points} points</Badge>
+        </div>
+        
+        <div className="border rounded-lg">
+          <div className="bg-gray-50 px-4 py-2 border-b">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">
+                {question.language || 'Code'}
+              </span>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Implement code execution
+                    toast.info('Code execution feature coming soon');
+                  }}
+                >
+                  Run Code
+                </Button>
+              </div>
+            </div>
+          </div>
+          
+          <textarea
+            value={value}
+            onChange={(e) => handleAnswerChange({
+              ...localAnswer,
+              student_answer: e.target.value
+            })}
+            placeholder="Write your code here..."
+            className="w-full h-64 p-4 font-mono text-sm border-0 resize-none focus:outline-none"
+            style={{ fontFamily: 'Monaco, Consolas, "Courier New", monospace' }}
+          />
+        </div>
+        
+        {question.test_cases && question.test_cases.length > 0 && (
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Test Cases:</h4>
+            <div className="space-y-2">
+              {question.test_cases.map((testCase, index) => (
+                <div key={index} className="bg-gray-50 p-3 rounded text-sm">
+                  <div className="font-medium">Test Case {index + 1}:</div>
+                  <div className="text-gray-600">Input: {testCase.input}</div>
+                  <div className="text-gray-600">Expected Output: {testCase.expected_output}</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -202,142 +353,9 @@ const QuestionRenderer = ({
     );
   };
 
-  const renderCoding = () => {
-    const codingDetails = question.metadata || question.coding_details || {};
-    const languages = codingDetails.languages || ['javascript'];
-    const starterCodes = codingDetails.starter_codes || {};
-    const solutionCodes = codingDetails.solution_codes || {};
-    const testCases = codingDetails.test_cases || [];
-
-    return (
-      <div className="space-y-4">
-        {/* Language Selector */}
-        {languages.length > 1 && (
-          <div className="flex items-center space-x-2">
-            <Label>Language:</Label>
-            <select
-              value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="border rounded px-2 py-1"
-              disabled={isReadOnly}
-            >
-              {languages.map(lang => (
-                <option key={lang} value={lang}>{lang}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Code Editor */}
-        <div className="space-y-2">
-          <Label>Your Code:</Label>
-          <CodeEditor
-            value={answer || starterCodes[selectedLanguage] || ''}
-            onChange={onAnswerChange}
-            language={selectedLanguage}
-            readOnly={isReadOnly}
-            className="min-h-[300px]"
-          />
-        </div>
-
-        {/* Test Cases */}
-        {testCases.length > 0 && (
-          <div className="space-y-2">
-            <Label>Test Cases:</Label>
-            <TestCaseManager
-              testCases={testCases}
-              onRunTests={async (code) => {
-                setIsRunningTests(true);
-                try {
-                  // This would integrate with your coding service
-                  const results = await runCodeTests(code, testCases, selectedLanguage);
-                  setTestResults(results);
-                } catch (error) {
-                  console.error('Test execution error:', error);
-                } finally {
-                  setIsRunningTests(false);
-                }
-              }}
-              isRunning={isRunningTests}
-              results={testResults}
-              showResults={showCorrectAnswer}
-            />
-          </div>
-        )}
-
-        {/* Solution Code (only shown when reviewing) */}
-        {showCorrectAnswer && solutionCodes[selectedLanguage] && (
-          <div className="space-y-2">
-            <Label>Solution Code:</Label>
-            <CodeEditor
-              value={solutionCodes[selectedLanguage]}
-              readOnly={true}
-              language={selectedLanguage}
-              className="min-h-[200px] bg-gray-50"
-            />
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderFillBlanks = () => {
-    const content = question.content || '';
-    const blanks = question.correct_answers || [];
-    
-    // Replace blank placeholders with input fields
-    const renderContent = () => {
-      const parts = content.split(/(\[\[blank\d+\]\])/);
-      return parts.map((part, index) => {
-        const blankMatch = part.match(/\[\[blank(\d+)\]\]/);
-        if (blankMatch) {
-          const blankIndex = parseInt(blankMatch[1]) - 1;
-          const currentAnswers = answer || [];
-          
-          return (
-            <input
-              key={index}
-              type="text"
-              value={currentAnswers[blankIndex] || ''}
-              onChange={(e) => {
-                const newAnswers = [...(answer || [])];
-                newAnswers[blankIndex] = e.target.value;
-                onAnswerChange(newAnswers);
-              }}
-              className="border-b-2 border-blue-500 px-2 py-1 mx-1 w-32 text-center"
-              placeholder={`Blank ${blankIndex + 1}`}
-              disabled={isReadOnly}
-            />
-          );
-        }
-        return <span key={index}>{part}</span>;
-      });
-    };
-
-    return (
-      <div className="space-y-4">
-        <div className="text-lg leading-relaxed">
-          {renderContent()}
-        </div>
-        
-        {showCorrectAnswer && blanks.length > 0 && (
-          <div className="mt-2 p-3 bg-green-50 rounded-lg">
-            <div className="text-sm font-medium text-green-800">Correct answers:</div>
-            <ul className="text-sm text-green-700 mt-1">
-              {blanks.map((blank, index) => (
-                <li key={index}>Blank {index + 1}: {blank}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderQuestionContent = () => {
+  const renderQuestion = () => {
     switch (question.question_type) {
       case 'multiple_choice':
-      case 'single_choice':
         return renderMultipleChoice();
       case 'true_false':
         return renderTrueFalse();
@@ -345,99 +363,62 @@ const QuestionRenderer = ({
         return renderShortAnswer();
       case 'essay':
         return renderEssay();
+      case 'fill_blank':
+        return renderFillBlank();
       case 'coding':
         return renderCoding();
-      case 'fill_blanks':
-        return renderFillBlanks();
       default:
         return (
-          <div className="text-red-600">
-            <AlertCircle className="h-5 w-5 inline mr-2" />
+          <div className="text-center text-gray-500 py-8">
             Unsupported question type: {question.question_type}
           </div>
         );
     }
   };
 
-  // Mock function for running code tests
-  const runCodeTests = async (code, testCases, language) => {
-    // This would integrate with your actual coding service
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          passed: testCases.length,
-          total: testCases.length,
-          results: testCases.map((testCase, index) => ({
-            testCase: index + 1,
-            passed: Math.random() > 0.3, // Mock result
-            output: `Test case ${index + 1} result`,
-            expected: testCase.expected_output,
-            actual: `Output ${index + 1}`
-          }))
-        });
-      }, 1000);
-    });
-  };
+  if (!question) {
+    return (
+      <div className="text-center text-gray-500 py-8">
+        No question available
+      </div>
+    );
+  }
 
   return (
     <Card>
       <CardContent className="p-6">
-        <div className="space-y-6">
-          {/* Question Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex items-center space-x-3">
-              {getQuestionTypeIcon(question.question_type)}
-              <div>
-                <Badge variant="secondary">
-                  {getQuestionTypeLabel(question.question_type)}
-                </Badge>
-                <div className="flex items-center space-x-2 mt-1">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
-                    {question.time_limit_seconds ? `${question.time_limit_seconds}s` : 'No time limit'}
-                  </span>
-                  <Target className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
-                    {question.points || 1} point{question.points !== 1 ? 's' : ''}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Question Text */}
-          <div className="text-lg leading-relaxed">
-            {question.question_text || question.content}
-          </div>
-
-          {/* Question Content */}
-          {renderQuestionContent()}
-
-          {/* Hints */}
-          {question.hints && question.hints.length > 0 && (
-            <div className="p-3 bg-yellow-50 rounded-lg">
-              <div className="text-sm font-medium text-yellow-800">Hints:</div>
-              <ul className="text-sm text-yellow-700 mt-1">
-                {question.hints.map((hint, index) => (
-                  <li key={index}>• {hint}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Explanation (only shown when reviewing) */}
-          {showCorrectAnswer && question.explanation && (
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <div className="text-sm font-medium text-blue-800">Explanation:</div>
-              <div className="text-sm text-blue-700 mt-1">
-                {question.explanation}
-              </div>
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            {question.question_text}
+          </h3>
+          
+          {question.explanation && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <h4 className="text-sm font-medium text-blue-800 mb-2">Instructions:</h4>
+              <p className="text-sm text-blue-700">{question.explanation}</p>
             </div>
           )}
         </div>
+
+        {renderQuestion()}
+
+        {isDirty && (
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-orange-600">
+              You have unsaved changes
+            </div>
+            <Button
+              onClick={handleSave}
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Save Answer
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 };
 
-export default QuestionRenderer; 
+export default QuestionRenderer;

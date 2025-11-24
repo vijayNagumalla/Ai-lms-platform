@@ -159,7 +159,7 @@ if __name__ == "__main__":
     javascript: `// Write your JavaScript code here
 function main() {
     // Your code goes here
-    console.log("Hello, World!");
+    // console.log("Hello, World!");
 }
 
 main();`,
@@ -268,7 +268,7 @@ fn main() {
     typescript: `// Write your TypeScript code here
 function main(): void {
     // Your code goes here
-    console.log("Hello, World!");
+    // console.log("Hello, World!");
 }
 
 main();`

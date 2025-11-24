@@ -40,6 +40,11 @@ const CopyAssessmentDialog = ({
     instructions: '',
     startDate: '',
     endDate: '',
+    startTime: '09:00',
+    endTime: '17:00',
+    timezone: 'UTC',
+    earlyAccessHours: 0,
+    lateSubmissionMinutes: 0,
     timeLimit: '',
     maxAttempts: '',
     passingScore: '',
@@ -82,7 +87,7 @@ const CopyAssessmentDialog = ({
       if (response.success) {
         const students = response.data.map(student => ({
           id: student.id,
-          name: `${student.first_name} ${student.last_name}`,
+          name: student.name,
           email: student.email,
           rollNumber: student.roll_number || student.student_id || 'N/A'
         }));
@@ -108,6 +113,11 @@ const CopyAssessmentDialog = ({
         instructions: assessment.instructions || '',
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days from now
+        startTime: assessment.scheduling?.start_time || '09:00',
+        endTime: assessment.scheduling?.end_time || '17:00',
+        timezone: assessment.scheduling?.timezone || 'UTC',
+        earlyAccessHours: assessment.scheduling?.early_access_hours || 0,
+        lateSubmissionMinutes: assessment.scheduling?.late_submission_minutes || 0,
         timeLimit: assessment.time_limit_minutes?.toString() || '60',
         maxAttempts: assessment.max_attempts?.toString() || '1',
         passingScore: assessment.passing_score?.toString() || '50',
@@ -304,6 +314,67 @@ const CopyAssessmentDialog = ({
                       type="date"
                       value={formData.endDate}
                       onChange={(e) => handleInputChange('endDate', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="startTime">Start Time</Label>
+                    <Input
+                      id="startTime"
+                      type="time"
+                      value={formData.startTime}
+                      onChange={(e) => handleInputChange('startTime', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="endTime">End Time</Label>
+                    <Input
+                      id="endTime"
+                      type="time"
+                      value={formData.endTime}
+                      onChange={(e) => handleInputChange('endTime', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Select value={formData.timezone} onValueChange={(value) => handleInputChange('timezone', value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                        <SelectItem value="America/New_York">EST (New York)</SelectItem>
+                        <SelectItem value="America/Chicago">CST (Chicago)</SelectItem>
+                        <SelectItem value="America/Denver">MST (Denver)</SelectItem>
+                        <SelectItem value="America/Los_Angeles">PST (Los Angeles)</SelectItem>
+                        <SelectItem value="Europe/London">GMT (London)</SelectItem>
+                        <SelectItem value="Europe/Paris">CET (Paris)</SelectItem>
+                        <SelectItem value="Asia/Tokyo">JST (Tokyo)</SelectItem>
+                        <SelectItem value="Asia/Kolkata">IST (India)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="earlyAccessHours">Early Access (hours)</Label>
+                    <Input
+                      id="earlyAccessHours"
+                      type="number"
+                      min="0"
+                      value={formData.earlyAccessHours}
+                      onChange={(e) => handleInputChange('earlyAccessHours', parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lateSubmissionMinutes">Late Submission (minutes)</Label>
+                    <Input
+                      id="lateSubmissionMinutes"
+                      type="number"
+                      min="0"
+                      value={formData.lateSubmissionMinutes}
+                      onChange={(e) => handleInputChange('lateSubmissionMinutes', parseInt(e.target.value) || 0)}
                     />
                   </div>
                 </div>

@@ -1,12 +1,14 @@
 import { pool } from '../config/database.js';
 import dockerCodeService from '../services/dockerCodeService.js';
+// CRITICAL FIX: Import Judge0Service for optional health check (if configured)
+import judge0Service from '../services/judge0Service.js';
 
 // Execute code
 export const executeCode = async (req, res) => {
   try {
     const { sourceCode, language, input, expectedOutput } = req.body;
 
-    // Validate required fields
+    // CRITICAL FIX: Validate required fields
     if (!sourceCode || !language) {
       return res.status(400).json({
         success: false,
@@ -14,8 +16,74 @@ export const executeCode = async (req, res) => {
       });
     }
 
-    // Execute code
-    const result = await dockerCodeService.executeCode(sourceCode, language, input || '', expectedOutput || '');
+    // CRITICAL FIX: Validate and sanitize language parameter
+    if (typeof language !== 'string' || language.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid language parameter'
+      });
+    }
+
+    // CRITICAL FIX: Validate sourceCode is a string and not empty
+    if (typeof sourceCode !== 'string' || sourceCode.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source code must be a non-empty string'
+      });
+    }
+
+    // CRITICAL FIX: Validate input length (prevent DoS)
+    if (input && typeof input === 'string' && input.length > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Input exceeds maximum length (10KB)'
+      });
+    }
+
+    // CRITICAL FIX: Validate expectedOutput length (prevent DoS)
+    if (expectedOutput && typeof expectedOutput === 'string' && expectedOutput.length > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Expected output exceeds maximum length (10KB)'
+      });
+    }
+
+    // CRITICAL FIX: Validate sourceCode length (prevent DoS)
+    if (sourceCode.length > 100000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source code exceeds maximum length (100KB)'
+      });
+    }
+
+    // CRITICAL FIX: Check if Judge0 is configured and available, fallback to Docker
+    let result;
+    const useJudge0 = process.env.JUDGE0_URL && process.env.JUDGE0_URL !== 'http://localhost:2358';
+
+    if (useJudge0) {
+      // CRITICAL FIX: Health check Judge0 before using it
+      const healthCheck = await judge0Service.healthCheck();
+      if (healthCheck.success) {
+        try {
+          result = await judge0Service.executeCode(sourceCode, language, input || '', expectedOutput || '');
+          if (!result.success) {
+            // Fallback to Docker if Judge0 fails
+            console.warn('Judge0 execution failed, falling back to Docker service');
+            result = await dockerCodeService.executeCode(sourceCode, language, input || '', expectedOutput || '');
+          }
+        } catch (error) {
+          console.warn('Judge0 service error, falling back to Docker service:', error.message);
+          result = await dockerCodeService.executeCode(sourceCode, language, input || '', expectedOutput || '');
+        }
+      } else {
+        // Judge0 not available, use Docker
+        console.warn('Judge0 service not available, using Docker service');
+        result = await dockerCodeService.executeCode(sourceCode, language, input || '', expectedOutput || '');
+      }
+    } else {
+      // Execute code using Docker (sanitization is handled inside dockerCodeService)
+      result = await dockerCodeService.executeCode(sourceCode, language, input || '', expectedOutput || '');
+    }
 
     if (!result.success) {
       return res.status(500).json({
@@ -29,7 +97,7 @@ export const executeCode = async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Execute code error:', error);
+    // console.error('Execute code error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -42,7 +110,7 @@ export const runTestCases = async (req, res) => {
   try {
     const { sourceCode, language, testCases } = req.body;
 
-    // Validate required fields
+    // CRITICAL FIX: Validate required fields
     if (!sourceCode || !language || !testCases || !Array.isArray(testCases)) {
       return res.status(400).json({
         success: false,
@@ -50,25 +118,92 @@ export const runTestCases = async (req, res) => {
       });
     }
 
+    // CRITICAL FIX: Validate and sanitize language parameter
+    if (typeof language !== 'string' || language.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid language parameter'
+      });
+    }
+
+    // CRITICAL FIX: Validate sourceCode is a string and not empty
+    if (typeof sourceCode !== 'string' || sourceCode.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source code must be a non-empty string'
+      });
+    }
+
+    // CRITICAL FIX: Validate sourceCode length (prevent DoS)
+    if (sourceCode.length > 100000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source code exceeds maximum length (100KB)'
+      });
+    }
+
+    // CRITICAL FIX: Validate testCases array
+    if (!Array.isArray(testCases) || testCases.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Test cases must be a non-empty array'
+      });
+    }
+
+    // CRITICAL FIX: Validate testCases array length (prevent DoS)
+    if (testCases.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many test cases (maximum 100 allowed)'
+      });
+    }
+
+    // CRITICAL FIX: Validate each test case structure
+    for (let i = 0; i < testCases.length; i++) {
+      const testCase = testCases[i];
+      if (!testCase || typeof testCase !== 'object') {
+        return res.status(400).json({
+          success: false,
+          message: `Test case ${i + 1} is invalid: must be an object`
+        });
+      }
+
+      // Validate input length
+      if (testCase.input && typeof testCase.input === 'string' && testCase.input.length > 10000) {
+        return res.status(400).json({
+          success: false,
+          message: `Test case ${i + 1} input exceeds maximum length (10KB)`
+        });
+      }
+
+      // Validate expectedOutput length
+      if (testCase.expectedOutput && typeof testCase.expectedOutput === 'string' && testCase.expectedOutput.length > 10000) {
+        return res.status(400).json({
+          success: false,
+          message: `Test case ${i + 1} expected output exceeds maximum length (10KB)`
+        });
+      }
+    }
+
 
 
     // Optimized batch test case execution using single Docker container
     let results = [];
-    
+
     try {
       const config = dockerCodeService.getLanguageConfig(language);
       const { filename, filepath } = await dockerCodeService.createTempFile(sourceCode, config.extension);
-      
+
       // Use optimized batch execution method (with optional pooling)
       const usePooling = process.env.DOCKER_CONTAINER_POOLING === 'true';
-      results = usePooling ? 
+      results = usePooling ?
         await dockerCodeService.executeBatchTestCasesWithPool(filepath, config, testCases) :
         await dockerCodeService.executeBatchTestCases(filepath, config, testCases);
-      
+
       // Clean up
       await dockerCodeService.cleanupTempFiles([filepath]);
     } catch (error) {
-      console.error('Batch test case execution error:', error);
+      // console.error('Batch test case execution error:', error);
       throw error;
     }
 
@@ -118,7 +253,7 @@ export const getSupportedLanguages = async (req, res) => {
       data: supportedLanguages
     });
   } catch (error) {
-    console.error('Get supported languages error:', error);
+    // console.error('Get supported languages error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -141,7 +276,7 @@ if __name__ == "__main__":
       javascript: `// Write your JavaScript code here
 function main() {
     // Your code goes here
-    console.log("Hello, World!");
+    // console.log("Hello, World!");
 }
 
 main();`,
@@ -208,7 +343,7 @@ main();
       data: templates
     });
   } catch (error) {
-    console.error('Get language templates error:', error);
+    // console.error('Get language templates error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -243,15 +378,15 @@ export const verifyCodingQuestion = async (req, res) => {
     }
 
     const question = questions[0];
-    
+
     // Parse coding details
     let codingDetails = {};
     try {
-      codingDetails = question.metadata ? 
-        (typeof question.metadata === 'string' ? 
+      codingDetails = question.metadata ?
+        (typeof question.metadata === 'string' ?
           JSON.parse(question.metadata) : question.metadata) : {};
     } catch (e) {
-      console.warn('Failed to parse metadata for question', questionId);
+      // console.warn('Failed to parse metadata for question', questionId);
     }
 
     const testCases = codingDetails.test_cases || [];
@@ -265,21 +400,21 @@ export const verifyCodingQuestion = async (req, res) => {
 
     // Run test cases using optimized batch Docker service
     let results = [];
-    
+
     try {
       const config = dockerCodeService.getLanguageConfig(language);
       const { filename, filepath } = await dockerCodeService.createTempFile(sourceCode, config.extension);
-      
+
       // Use optimized batch execution method (with optional pooling)
       const usePooling = process.env.DOCKER_CONTAINER_POOLING === 'true';
-      results = usePooling ? 
+      results = usePooling ?
         await dockerCodeService.executeBatchTestCasesWithPool(filepath, config, testCases) :
         await dockerCodeService.executeBatchTestCases(filepath, config, testCases);
-      
+
       // Clean up
       await dockerCodeService.cleanupTempFiles([filepath]);
     } catch (error) {
-      console.error('Batch test case execution error during verification:', error);
+      // console.error('Batch test case execution error during verification:', error);
       throw error;
     }
 
@@ -309,7 +444,7 @@ export const verifyCodingQuestion = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Verify coding question error:', error);
+    // console.error('Verify coding question error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -327,14 +462,14 @@ export const healthCheck = async (req, res) => {
       input: '',
       expectedOutput: 'Hello, World!'
     });
-    
+
     res.json({
       success: testResult.success,
       message: testResult.success ? 'Docker code execution service is healthy' : 'Service is not responding properly',
       details: testResult
     });
   } catch (error) {
-    console.error('Health check error:', error);
+    // console.error('Health check error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -360,7 +495,7 @@ export const getSubmissionStatus = async (req, res) => {
       message: 'Submission status not available with Docker execution service. Use direct code execution instead.'
     });
   } catch (error) {
-    console.error('Get submission status error:', error);
+    // console.error('Get submission status error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

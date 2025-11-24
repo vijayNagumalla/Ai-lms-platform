@@ -1,0 +1,83 @@
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\analyticsController.js[24m[0m
+[0m   [2m57:9[22m   [31merror[39m  'roleBasedFilter' is assigned a value but never used   [2mno-unused-vars[22m[0m
+[0m  [2m159:7[22m   [31merror[39m  'departmentFilter' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m167:7[22m   [31merror[39m  'studentFilter' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m  [2m921:21[22m  [31merror[39m  'filters' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\assessmentController.js[24m[0m
+[0m    [2m39:7[22m   [31merror[39m    'generateToken' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m    [2m48:7[22m   [31merror[39m    'evaluateCodingQuestion' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m   [2m834:16[22m  [31merror[39m    'existingAssignments' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m   [2m855:15[22m  [31merror[39m    'updateResult' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m   [2m869:16[22m  [31merror[39m    'updatedAssignments' is assigned a value but never used      [2mno-unused-vars[22m[0m
+[0m  [2m1110:7[22m   [31merror[39m    'section_id' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1113:7[22m   [31merror[39m    'time_limit_seconds' is assigned a value but never used      [2mno-unused-vars[22m[0m
+[0m  [2m1504:7[22m   [31merror[39m    'tags' is assigned a value but never used                    [2mno-unused-vars[22m[0m
+[0m  [2m1721:7[22m   [33mwarning[39m  Expected a default case                                      [2mdefault-case[22m[0m
+[0m  [2m2643:11[22m  [31merror[39m    'currentAttemptCount' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m  [2m2645:11[22m  [31merror[39m    'nextAttemptNumber' is assigned a value but never used       [2mno-unused-vars[22m[0m
+[0m  [2m2946:11[22m  [31merror[39m    'now' is assigned a value but never used                     [2mno-unused-vars[22m[0m
+[0m  [2m2994:53[22m  [31merror[39m    'started_at' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m2994:80[22m  [31merror[39m    'answers' is assigned a value but never used                 [2mno-unused-vars[22m[0m
+[0m  [2m4147:11[22m  [31merror[39m    'result' is assigned a value but never used                  [2mno-unused-vars[22m[0m
+[0m  [2m4156:12[22m  [31merror[39m    'rawResult' is assigned a value but never used               [2mno-unused-vars[22m[0m
+[0m  [2m4179:17[22m  [31merror[39m    'current_user_id' is assigned a value but never used         [2mno-unused-vars[22m[0m
+[0m  [2m4287:11[22m  [31merror[39m    'assessment' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m4446:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m  [2m4455:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used            [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\authController.js[24m[0m
+[0m  [2m117:12[22m  [31merror[39m  'result' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\bulkUploadController.js[24m[0m
+[0m  [2m442:9[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m443:13[22m  [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m444:7[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\codingController.js[24m[0m
+[0m  [2m194:13[22m  [31merror[39m  'filename' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m400:13[22m  [31merror[39m  'filename' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\codingProfileController.js[24m[0m
+[0m  [2m4:8[22m   [31merror[39m  'platformScraperService' is defined but never used  [2mno-unused-vars[22m[0m
+[0m  [2m7:10[22m  [31merror[39m  'authenticateToken' is defined but never used       [2mno-unused-vars[22m[0m
+[0m  [2m8:10[22m  [31merror[39m  'requireRole' is defined but never used             [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\collegeController.js[24m[0m
+[0m  [2m473:14[22m  [31merror[39m  'result' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\facultyAllocationController.js[24m[0m
+[0m  [2m330:11[22m  [31merror[39m  'project' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\projectManagementController.js[24m[0m
+[0m  [2m389:11[22m  [31merror[39m  'userId' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\questionBankController.js[24m[0m
+[0m    [2m74:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m   [2m430:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m   [2m547:5[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m   [2m588:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m592:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m597:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m598:9[22m   [31merror[39m    Unexpected lexical declaration in case block             [2mno-case-declarations[22m[0m
+[0m   [2m624:12[22m  [31merror[39m    'result' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1036:7[22m   [31merror[39m    'acceptable_answers' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m1037:7[22m   [31merror[39m    'rubric' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1039:7[22m   [31merror[39m    'blanks' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1652:5[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m1851:9[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m2244:9[22m   [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\reportsController.js[24m[0m
+[0m  [2m175:11[22m  [31merror[39m  'userId' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\superAdminController.js[24m[0m
+[0m  [2m2:8[22m  [31merror[39m  'bcrypt' is defined but never used  [2mno-unused-vars[22m[0m
+[0m  [2m3:8[22m  [31merror[39m  'jwt' is defined but never used     [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\userManagementController.js[24m[0m
+[0m  [2m765:11[22m  [31merror[39m  'user' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[31m[1m✖ 54 problems (49 errors, 5 warnings)[22m[39m[0m
+[0m[31m[1m[22m[39m[0m

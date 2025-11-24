@@ -132,7 +132,7 @@ export default function AssignmentStep({ formData, updateFormData, colleges }) {
     };
 
     // Debounce the search to avoid too many API calls
-    const timeoutId = setTimeout(searchStudents, 300);
+    const timeoutId = setTimeout(searchStudents, 150); // Reduced from 300ms for faster response
     return () => clearTimeout(timeoutId);
   }, [studentSearch]);
 

@@ -14,10 +14,12 @@ export const testAnalyticsConnection = async (req, res) => {
       data: result[0]
     });
   } catch (error) {
+    console.error('Analytics connection test failed:', error);
     // Analytics connection test failed
     res.status(500).json({
       success: false,
-      message: 'Analytics connection failed'
+      message: 'Analytics connection failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -25,19 +27,27 @@ export const testAnalyticsConnection = async (req, res) => {
 // Get comprehensive analytics data
 export const getAnalyticsData = async (req, res) => {
   try {
-    const { 
-      viewType = 'college', 
-      collegeId, 
+    const {
+      viewType = 'college',
+      collegeId,
       departmentId,
-      studentId, 
-      dateRange = '30', 
+      studentId,
+      dateRange = '30',
       assessmentType = 'all',
       startDate,
       endDate
     } = req.query;
 
+
     // Get user information from authentication middleware
     const currentUser = req.user;
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
     const userRole = currentUser.role;
     const userCollegeId = currentUser.college_id;
     const userDepartment = currentUser.department;
@@ -57,7 +67,7 @@ export const getAnalyticsData = async (req, res) => {
         roleBasedFilterForUsers = 'AND u.id = ?';
         roleBasedParams.push(userId);
         break;
-      
+
       case 'faculty':
         // Faculty can see data from their college and department
         if (userCollegeId) {
@@ -73,7 +83,7 @@ export const getAnalyticsData = async (req, res) => {
           roleBasedParams.push(userDepartment);
         }
         break;
-      
+
       case 'admin':
         // Admins can see data from their college only
         if (userCollegeId) {
@@ -83,11 +93,11 @@ export const getAnalyticsData = async (req, res) => {
           roleBasedParams.push(userCollegeId);
         }
         break;
-      
+
       case 'super_admin':
         // Super admins can see all data (no additional filtering)
         break;
-      
+
       default:
         // For unknown roles, restrict to user's own data
         roleBasedFilterForSubmissions = 'AND sub.student_id = ?';
@@ -99,35 +109,57 @@ export const getAnalyticsData = async (req, res) => {
     // Calculate date range
     let dateFilter = '';
     let dateParams = [];
-    
+
     if (startDate && endDate && startDate !== 'null' && endDate !== 'null') {
       dateFilter = 'AND sub.submitted_at BETWEEN ? AND ?';
       dateParams = [startDate, endDate];
     } else {
-      dateFilter = 'AND (sub.submitted_at >= DATE_SUB(NOW(), INTERVAL ? DAY) OR sub.submitted_at IS NULL)';
-      dateParams = [parseInt(dateRange)];
+      // CRITICAL FIX: Calculate date on application side - MySQL prepared statements have issues with INTERVAL ? DAY
+      const dateRangeNum = parseInt(dateRange) || 30;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - dateRangeNum);
+      const cutoffDateStr = cutoffDate.toISOString().split('T')[0] + ' 00:00:00';
+
+      dateFilter = 'AND (sub.submitted_at >= ? OR sub.submitted_at IS NULL)';
+      dateParams = [cutoffDateStr];
     }
 
-    // Assessment type filter
-    let assessmentTypeFilter = '';
-    if (assessmentType !== 'all') {
-      assessmentTypeFilter = 'AND at.assessment_type = ?';
-      dateParams.push(assessmentType);
-    }
+    // Assessment type filter removed
 
-    // College filter
+    // College filter - build separate params array for college query
     let collegeFilter = '';
+    let collegeParams = [];
     if (collegeId && collegeId !== 'all') {
-      collegeFilter = 'AND u.college_id = ?';
-      dateParams.push(collegeId);
+      collegeFilter = 'AND c.id = ?'; // Fix: Use c.id instead of u.college_id for direct college filtering
+      const collegeIdNum = parseInt(collegeId);
+      if (isNaN(collegeIdNum)) {
+        throw new Error(`Invalid collegeId: ${collegeId}`);
+      }
+      collegeParams.push(collegeIdNum);
+    }
+    // Add date params to college params in correct order (college filter first, then date)
+    // Note: dateFilter is already set above, so we need to match its placeholders exactly
+    if (startDate && endDate && startDate !== 'null' && endDate !== 'null') {
+      // dateFilter uses BETWEEN ? AND ? (2 placeholders)
+      collegeParams.push(startDate, endDate);
+    } else {
+      // dateFilter now uses a calculated date string (1 placeholder) instead of INTERVAL ? DAY
+      const dateRangeNum = parseInt(dateRange) || 30;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - dateRangeNum);
+      const cutoffDateStr = cutoffDate.toISOString().split('T')[0] + ' 00:00:00';
+      collegeParams.push(cutoffDateStr);
     }
 
-    // Department filter
+
+    // Department filter - build separate params array for department query
     let departmentFilter = '';
+    let departmentParams = [];
     if (departmentId && departmentId !== 'all') {
       departmentFilter = 'AND u.department = ?';
-      dateParams.push(departmentId);
+      departmentParams.push(departmentId);
     }
+    // Note: Department query doesn't have dateFilter placeholders, so don't add date params
 
     // Student filter
     let studentFilter = '';
@@ -140,7 +172,8 @@ export const getAnalyticsData = async (req, res) => {
     // Create parameter arrays for each subquery
     const templateParams = roleBasedFilterForTemplates ? [...roleBasedParams] : [];
     const submissionParams = roleBasedFilterForSubmissions ? [...roleBasedParams] : [];
-    
+
+
     const [summaryStats] = await pool.execute(`
       SELECT 
         (SELECT COUNT(*) FROM assessment_templates at 
@@ -172,8 +205,79 @@ export const getAnalyticsData = async (req, res) => {
       ...submissionParams
     ]);
 
+    // MEDIUM FIX: Add pagination support for college stats
+    const collegeLimit = Math.min(parseInt(req.query.collegeLimit) || 50, 200); // Max 200, default 50
+    const collegeOffset = parseInt(req.query.collegeOffset) || 0;
+
     // Get college-wise statistics with role-based filtering
-    const [collegeStats] = await pool.execute(`
+    // CRITICAL FIX: Use collegeParams array with correct parameter order
+    // Build the final params array: college filter (if any) + date filter + pagination
+    // collegeParams already includes: [collegeId?] + [dateRange or startDate, endDate]
+    // Ensure all parameters are valid (not NaN) and properly typed
+    const validCollegeParams = collegeParams.map(p => {
+      // If it's already a number, return it
+      if (typeof p === 'number' && !isNaN(p)) {
+        return p;
+      }
+      // If it's a date string, keep it as is
+      if (typeof p === 'string' && !isNaN(Date.parse(p))) {
+        return p;
+      }
+      // Try to parse as number
+      const num = parseInt(p);
+      return isNaN(num) ? p : num;
+    });
+
+    // Ensure limit and offset are numbers
+    const finalLimit = typeof collegeLimit === 'number' && !isNaN(collegeLimit) ? collegeLimit : 50;
+    const finalOffset = typeof collegeOffset === 'number' && !isNaN(collegeOffset) ? collegeOffset : 0;
+
+    // Build final parameter array - validCollegeParams already includes college filter (if any) + date filter
+    // validCollegeParams should always have at least the date parameter
+    if (validCollegeParams.length === 0) {
+      throw new Error('validCollegeParams is empty - date parameter should always be present');
+    }
+
+    // CRITICAL FIX: MySQL doesn't support parameterized LIMIT/OFFSET, so we need to interpolate them directly
+    // Ensure limit and offset are safe integers to prevent SQL injection
+    const safeLimit = parseInt(finalLimit);
+    const safeOffset = parseInt(finalOffset);
+    if (isNaN(safeLimit) || isNaN(safeOffset) || safeLimit < 0 || safeOffset < 0) {
+      throw new Error(`Invalid pagination parameters: limit=${finalLimit}, offset=${finalOffset}`);
+    }
+
+    const collegeQueryParams = [...validCollegeParams];
+
+    // Final validation - ensure no undefined or null values
+    const hasInvalidParams = collegeQueryParams.some(p => p === undefined || p === null || (typeof p === 'number' && isNaN(p)));
+    if (hasInvalidParams) {
+      throw new Error(`Invalid parameters detected: ${JSON.stringify(collegeQueryParams)}`);
+    }
+
+    // Count placeholders vs parameters
+    const collegeFilterPlaceholders = (collegeFilter.match(/\?/g) || []).length;
+    const dateFilterPlaceholders = (dateFilter.match(/\?/g) || []).length;
+    const totalPlaceholders = collegeFilterPlaceholders + dateFilterPlaceholders;
+
+    if (collegeQueryParams.length !== totalPlaceholders) {
+      console.error('CRITICAL: Parameter count mismatch in college stats query!', {
+        collegeFilter,
+        dateFilter,
+        collegeFilterPlaceholders,
+        dateFilterPlaceholders,
+        totalPlaceholders,
+        paramsCount: collegeQueryParams.length,
+        params: collegeQueryParams,
+        collegeParams: collegeParams,
+        validCollegeParams: validCollegeParams,
+        finalLimit: safeLimit,
+        finalOffset: safeOffset
+      });
+      throw new Error(`Parameter count mismatch: Expected ${totalPlaceholders} parameters but got ${collegeQueryParams.length}. Params: ${JSON.stringify(collegeQueryParams)}`);
+    }
+
+    // Build the SQL query string
+    let collegeQuerySQL = `
       SELECT 
         c.id,
         c.name,
@@ -187,13 +291,35 @@ export const getAnalyticsData = async (req, res) => {
       LEFT JOIN assessment_submissions sub ON at.id = sub.assessment_id
       LEFT JOIN users u ON sub.student_id = u.id
       WHERE c.is_active = TRUE
-      ${collegeFilter}
-      ${dateFilter}
+    `;
+
+    // Add filters in correct order
+    if (collegeFilter) {
+      collegeQuerySQL += ` ${collegeFilter}`;
+    }
+    collegeQuerySQL += ` ${dateFilter}`;
+    // CRITICAL FIX: Interpolate LIMIT and OFFSET directly (they're validated as safe integers above)
+    collegeQuerySQL += `
       GROUP BY c.id, c.name
       ORDER BY averageScore DESC
-    `, [...dateParams]);
+      LIMIT ${safeLimit} OFFSET ${safeOffset}
+    `;
+
+    const [collegeStats] = await pool.execute(collegeQuerySQL, collegeQueryParams);
+
+    // MEDIUM FIX: Add pagination support for department stats
+    const departmentLimit = Math.min(parseInt(req.query.departmentLimit) || 50, 200); // Max 200, default 50
+    const departmentOffset = parseInt(req.query.departmentOffset) || 0;
+
+    // CRITICAL FIX: MySQL doesn't support parameterized LIMIT/OFFSET, so we need to interpolate them directly
+    const safeDepartmentLimit = parseInt(departmentLimit);
+    const safeDepartmentOffset = parseInt(departmentOffset);
+    if (isNaN(safeDepartmentLimit) || isNaN(safeDepartmentOffset) || safeDepartmentLimit < 0 || safeDepartmentOffset < 0) {
+      throw new Error(`Invalid pagination parameters: limit=${departmentLimit}, offset=${departmentOffset}`);
+    }
 
     // Get department-wise statistics with role-based filtering
+    // CRITICAL FIX: Department query doesn't have dateFilter, so only pass departmentParams (no date params)
     const [departmentStats] = await pool.execute(`
       SELECT 
         d.id,
@@ -212,9 +338,21 @@ export const getAnalyticsData = async (req, res) => {
       ${collegeFilter}
       GROUP BY d.id, d.name, c.name
       ORDER BY averageScore DESC
-    `, [...dateParams]);
+      LIMIT ${safeDepartmentLimit} OFFSET ${safeDepartmentOffset}
+    `, [...departmentParams]);
 
-    // Get student-wise statistics with role-based filtering
+    // MEDIUM FIX: Add pagination support for student stats
+    const studentLimit = Math.min(parseInt(req.query.studentLimit) || 100, 500); // Max 500, default 100
+    const studentOffset = parseInt(req.query.studentOffset) || 0;
+
+    // CRITICAL FIX: MySQL doesn't support parameterized LIMIT/OFFSET, so we need to interpolate them directly
+    const safeStudentLimit = parseInt(studentLimit);
+    const safeStudentOffset = parseInt(studentOffset);
+    if (isNaN(safeStudentLimit) || isNaN(safeStudentOffset) || safeStudentLimit < 0 || safeStudentOffset < 0) {
+      throw new Error(`Invalid pagination parameters: limit=${studentLimit}, offset=${studentOffset}`);
+    }
+
+    // Get student-wise statistics with role-based filtering and pagination
     const [studentStats] = await pool.execute(`
       SELECT 
         u.id,
@@ -234,7 +372,19 @@ export const getAnalyticsData = async (req, res) => {
       ${roleBasedFilterForUsers}
       GROUP BY u.id, u.name, u.email, c.name, u.department
       ORDER BY averageScore DESC
+      LIMIT ${safeStudentLimit} OFFSET ${safeStudentOffset}
     `, [...roleBasedParams]);
+
+    // MEDIUM FIX: Add pagination support for assessment stats
+    const assessmentLimit = Math.min(parseInt(req.query.assessmentLimit) || 100, 500); // Max 500, default 100
+    const assessmentOffset = parseInt(req.query.assessmentOffset) || 0;
+
+    // CRITICAL FIX: MySQL doesn't support parameterized LIMIT/OFFSET, so we need to interpolate them directly
+    const safeAssessmentLimit = parseInt(assessmentLimit);
+    const safeAssessmentOffset = parseInt(assessmentOffset);
+    if (isNaN(safeAssessmentLimit) || isNaN(safeAssessmentOffset) || safeAssessmentLimit < 0 || safeAssessmentOffset < 0) {
+      throw new Error(`Invalid pagination parameters: limit=${assessmentLimit}, offset=${assessmentOffset}`);
+    }
 
     // Get assessment-wise statistics with role-based filtering
     const assessmentStatsParams = [];
@@ -251,7 +401,6 @@ export const getAnalyticsData = async (req, res) => {
       SELECT 
         at.id,
         at.title,
-        at.assessment_type as assessment_type,
         COUNT(DISTINCT CASE WHEN ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN sub.student_id END) as totalStudents,
         COUNT(CASE WHEN (sub.status = 'submitted' OR sub.status = 'graded') AND ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN 1 END) as completedSubmissions,
         COALESCE(AVG(CASE WHEN ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN sub.percentage_score END), 0) as averageScore,
@@ -263,9 +412,10 @@ export const getAnalyticsData = async (req, res) => {
       LEFT JOIN users u ON sub.student_id = u.id
       WHERE at.status = 'published'
       ${dateFilter}
-      GROUP BY at.id, at.title, at.assessment_type
+      GROUP BY at.id, at.title
       ORDER BY averageScore DESC
-    `, assessmentStatsParams);
+      LIMIT ${safeAssessmentLimit} OFFSET ${safeAssessmentOffset}
+    `, [...assessmentStatsParams]);
 
     // Get score distribution with role-based filtering
     const scoreDistributionParams = [];
@@ -327,20 +477,9 @@ export const getAnalyticsData = async (req, res) => {
       assessmentTypePerformanceParams.push(collegeId, collegeId, collegeId);
     }
 
-    const [assessmentTypePerformance] = await pool.execute(`
-      SELECT 
-        at.assessment_type as assessment_type,
-        COUNT(DISTINCT at.id) as totalAssessments,
-        COUNT(DISTINCT CASE WHEN ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN sub.student_id END) as totalStudents,
-        COALESCE(AVG(CASE WHEN ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN sub.percentage_score END), 0) as averageScore,
-        COUNT(CASE WHEN (sub.status = 'submitted' OR sub.status = 'graded') AND ${collegeId && collegeId !== 'all' ? 'u.college_id = ?' : '1=1'} THEN 1 END) as completedSubmissions
-      FROM assessment_templates at
-      LEFT JOIN assessment_submissions sub ON at.id = sub.assessment_id
-      LEFT JOIN users u ON sub.student_id = u.id
-      WHERE at.status = 'published'
-      GROUP BY at.assessment_type
-      ORDER BY averageScore DESC
-    `, assessmentTypePerformanceParams);
+    // MEDIUM FIX: Assessment type performance removed since assessment_type column no longer exists
+    // Return empty array with clear documentation
+    const assessmentTypePerformance = []; // Empty array - feature removed due to schema changes since assessment type column no longer exists
 
     // Helper function to convert numeric fields
     const convertNumericFields = (obj) => {
@@ -390,10 +529,12 @@ export const getAnalyticsData = async (req, res) => {
     });
 
   } catch (error) {
+    console.error('Analytics data error:', error);
     // Error getting analytics data
     res.status(500).json({
       success: false,
-      message: 'Failed to get analytics data'
+      message: 'Failed to get analytics data',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -401,12 +542,12 @@ export const getAnalyticsData = async (req, res) => {
 // Get course analytics data
 export const getCourseAnalyticsData = async (req, res) => {
   try {
-    const { 
-      collegeId, 
+    const {
+      collegeId,
       departmentId,
-      facultyId, 
-      studentId, 
-      dateRange = '30', 
+      facultyId,
+      studentId,
+      dateRange = '30',
       courseCategory = 'all',
       startDate,
       endDate
@@ -415,7 +556,7 @@ export const getCourseAnalyticsData = async (req, res) => {
     // Calculate date range
     let dateFilter = '';
     let dateParams = [];
-    
+
     if (startDate && endDate && startDate !== 'null' && endDate !== 'null') {
       dateFilter = 'AND c.created_at BETWEEN ? AND ?';
       dateParams = [startDate, endDate];
@@ -819,27 +960,27 @@ export const getChartAnnotations = async (req, res) => {
 export const getFacultyForAnalytics = async (req, res) => {
   try {
     const { collegeId, departmentId } = req.query;
-    
+
     let query = `
       SELECT u.id, u.name, u.email, c.name as college, u.department
       FROM users u
       LEFT JOIN colleges c ON u.college_id = c.id
       WHERE u.role = 'faculty' AND u.is_active = TRUE
     `;
-    
+
     const params = [];
     if (collegeId && collegeId !== 'all') {
       query += ' AND u.college_id = ?';
       params.push(collegeId);
     }
-    
+
     if (departmentId && departmentId !== 'all') {
       query += ' AND u.department = ?';
       params.push(departmentId);
     }
-    
+
     query += ' ORDER BY u.name';
-    
+
     const [faculty] = await pool.execute(query, params);
 
     res.json({
@@ -856,34 +997,14 @@ export const getFacultyForAnalytics = async (req, res) => {
 };
 
 // Get assessment types
-export const getAssessmentTypes = async (req, res) => {
-  try {
-    const [types] = await pool.execute(`
-      SELECT DISTINCT assessment_type
-      FROM assessment_templates
-      WHERE status = 'published'
-      ORDER BY assessment_type
-    `);
-
-    res.json({
-      success: true,
-      data: types
-    });
-  } catch (error) {
-    // Error getting assessment types
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get assessment types'
-    });
-  }
-};
+// Get assessment types - removed since assessment_type column no longer exists
 
 // Get detailed assessment data
 export const getAssessmentDetails = async (req, res) => {
   try {
     const { assessmentId } = req.params;
-    const { 
-      collegeId, 
+    const {
+      collegeId,
       departmentId,
       dateRange = '30',
       startDate,
@@ -893,7 +1014,7 @@ export const getAssessmentDetails = async (req, res) => {
     // Calculate date range
     let dateFilter = '';
     let dateParams = [];
-    
+
     if (startDate && endDate && startDate !== 'null' && endDate !== 'null') {
       dateFilter = 'AND sub.submitted_at BETWEEN ? AND ?';
       dateParams = [startDate, endDate];
@@ -922,7 +1043,6 @@ export const getAssessmentDetails = async (req, res) => {
         at.id,
         at.title,
         at.description,
-        at.assessment_type,
         at.difficulty_level,
         at.time_limit_minutes,
         at.total_points,
@@ -1111,22 +1231,22 @@ export const getCollegesForAnalytics = async (req, res) => {
 export const getDepartmentsForAnalytics = async (req, res) => {
   try {
     const { collegeId } = req.query;
-    
+
     let query = `
       SELECT d.id, d.name, d.code, c.name as collegeName
       FROM departments d
       JOIN colleges c ON d.college_id = c.id
       WHERE d.is_active = TRUE
     `;
-    
+
     const params = [];
     if (collegeId && collegeId !== 'all') {
       query += ' AND d.college_id = ?';
       params.push(collegeId);
     }
-    
+
     query += ' ORDER BY d.name';
-    
+
     const [departments] = await pool.execute(query, params);
 
     res.json({
@@ -1146,27 +1266,27 @@ export const getDepartmentsForAnalytics = async (req, res) => {
 export const getStudentsForAnalytics = async (req, res) => {
   try {
     const { collegeId, departmentId } = req.query;
-    
+
     let query = `
       SELECT u.id, u.name, u.email, c.name as college, u.department
       FROM users u
       LEFT JOIN colleges c ON u.college_id = c.id
       WHERE u.role = 'student' AND u.is_active = TRUE
     `;
-    
+
     const params = [];
     if (collegeId && collegeId !== 'all') {
       query += ' AND u.college_id = ?';
       params.push(collegeId);
     }
-    
+
     if (departmentId && departmentId !== 'all') {
       query += ' AND u.department = ?';
       params.push(departmentId);
     }
-    
+
     query += ' ORDER BY u.name';
-    
+
     const [students] = await pool.execute(query, params);
 
     res.json({
@@ -1185,11 +1305,22 @@ export const getStudentsForAnalytics = async (req, res) => {
 // Export analytics data
 export const exportAnalyticsData = async (req, res) => {
   try {
-    const { filters, format = 'excel' } = req.body;
-    
+    const { filters, format = 'excel', exportId } = req.body;
+
+    // MEDIUM FIX: Create progress tracker if exportId provided
+    const exportProgressService = (await import('../services/exportProgressService.js')).default;
+    const progressId = exportId || (await import('uuid')).v4();
+    if (!exportId) {
+      exportProgressService.createProgress(progressId, 100);
+    }
+
+    exportProgressService.updateProgress(progressId, 10, 'Fetching analytics data...');
+
     // Get analytics data
     const analyticsResponse = await getAnalyticsData({ query: filters }, { json: (data) => data });
     const analyticsData = analyticsResponse.data;
+
+    exportProgressService.updateProgress(progressId, 50, 'Generating export file...');
 
     if (format === 'excel') {
       await exportToExcel(analyticsData, res);
@@ -1198,14 +1329,32 @@ export const exportAnalyticsData = async (req, res) => {
     } else if (format === 'csv') {
       await exportToCSV(analyticsData, res);
     } else {
+      exportProgressService.failProgress(progressId, 'Unsupported export format');
       res.status(400).json({
         success: false,
-        message: 'Unsupported export format'
+        message: 'Unsupported export format',
+        exportId: progressId
+      });
+      return;
+    }
+
+    exportProgressService.completeProgress(progressId, 'Export completed successfully');
+
+    // Include exportId in response for progress tracking
+    if (res.headersSent === false) {
+      res.json({
+        success: true,
+        exportId: progressId,
+        message: 'Export completed'
       });
     }
 
   } catch (error) {
     // Error exporting analytics data
+    const exportProgressService = (await import('../services/exportProgressService.js')).default;
+    if (req.body.exportId) {
+      exportProgressService.failProgress(req.body.exportId, error.message);
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to export analytics data'
@@ -1217,14 +1366,14 @@ export const exportAnalyticsData = async (req, res) => {
 async function exportToExcel(data, res) {
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     // Summary sheet
     const summarySheet = workbook.addWorksheet('Summary');
     summarySheet.columns = [
       { header: 'Metric', key: 'metric', width: 20 },
       { header: 'Value', key: 'value', width: 15 }
     ];
-    
+
     summarySheet.addRows([
       { metric: 'Total Assessments', value: data.summary.totalAssessments || 0 },
       { metric: 'Active Students', value: data.summary.activeStudents || 0 },
@@ -1241,7 +1390,7 @@ async function exportToExcel(data, res) {
       { header: 'Average Score', key: 'averageScore', width: 15 },
       { header: 'Completed Assessments', key: 'completedAssessments', width: 20 }
     ];
-    
+
     collegeSheet.addRows(data.collegeStats || []);
 
     // Department Performance sheet
@@ -1254,7 +1403,7 @@ async function exportToExcel(data, res) {
       { header: 'Average Score', key: 'averageScore', width: 15 },
       { header: 'Completed Assessments', key: 'completedAssessments', width: 20 }
     ];
-    
+
     departmentSheet.addRows(data.departmentStats || []);
 
     // Student Performance sheet
@@ -1269,14 +1418,13 @@ async function exportToExcel(data, res) {
       { header: 'Average Score', key: 'averageScore', width: 15 },
       { header: 'Total Time Taken (min)', key: 'totalTimeTaken', width: 20 }
     ];
-    
+
     studentSheet.addRows(data.studentStats || []);
 
     // Assessment Performance sheet
     const assessmentSheet = workbook.addWorksheet('Assessment Performance');
     assessmentSheet.columns = [
       { header: 'Assessment Title', key: 'title', width: 35 },
-      { header: 'Type', key: 'assessment_type', width: 15 },
       { header: 'Total Students', key: 'totalStudents', width: 15 },
       { header: 'Completed Submissions', key: 'completedSubmissions', width: 20 },
       { header: 'Average Score', key: 'averageScore', width: 15 },
@@ -1284,7 +1432,7 @@ async function exportToExcel(data, res) {
       { header: 'Highest Score', key: 'highestScore', width: 15 },
       { header: 'Average Time (min)', key: 'averageTimeTaken', width: 18 }
     ];
-    
+
     assessmentSheet.addRows(data.assessmentStats || []);
 
     // Score Distribution sheet
@@ -1293,17 +1441,17 @@ async function exportToExcel(data, res) {
       { header: 'Score Range', key: 'scoreRange', width: 15 },
       { header: 'Count', key: 'count', width: 15 }
     ];
-    
+
     scoreSheet.addRows(data.charts.scoreDistribution || []);
 
     // Add pivot tables
     if (data.collegeStats && data.collegeStats.length > 0) {
       const pivotSheet = workbook.addWorksheet('Pivot Tables');
-      
+
       // College vs Assessment Type pivot
       pivotSheet.addRow(['College vs Assessment Type Analysis']);
       pivotSheet.addRow([]);
-      
+
       // Add pivot table data here
       // This would require additional queries to get the cross-tabulation data
     }
@@ -1311,15 +1459,15 @@ async function exportToExcel(data, res) {
     // Generate file
     const fileName = `analytics-report-${new Date().toISOString().split('T')[0]}.xlsx`;
     const filePath = path.join(process.cwd(), 'uploads', 'exports', fileName);
-    
+
     // Ensure directory exists
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    
+
     await workbook.xlsx.writeFile(filePath);
-    
+
     res.json({
       success: true,
       data: {
@@ -1343,13 +1491,13 @@ async function exportToPDF(data, res) {
     const doc = new PDFDocument();
     const fileName = `analytics-report-${new Date().toISOString().split('T')[0]}.pdf`;
     const filePath = path.join(process.cwd(), 'uploads', 'exports', fileName);
-    
+
     // Ensure directory exists
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    
+
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
 
@@ -1400,7 +1548,7 @@ async function exportToCSV(data, res) {
   try {
     const fileName = `analytics-report-${new Date().toISOString().split('T')[0]}.csv`;
     const filePath = path.join(process.cwd(), 'uploads', 'exports', fileName);
-    
+
     // Ensure directory exists
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {

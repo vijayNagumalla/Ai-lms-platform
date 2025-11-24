@@ -63,19 +63,12 @@ export default function SectionManagementStep({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Section Management</h2>
-        <p className="text-gray-600 mb-6">
-          Organize your assessment into sections. Each section can have different settings, question types, and completion requirements.
-        </p>
-      </div>
-
       {/* Global Section Settings */}
       <Card className="p-6 bg-blue-50 border-blue-200">
         <h3 className="text-lg font-semibold text-blue-800 mb-4">Global Section Control</h3>
         
-        {/* Show different options based on assessment type and structure */}
-        {formData.assessment_type === 'multi_type' && formData.multi_type_structure === 'section_based' ? (
+        {/* Show different options based on assessment structure */}
+        {true ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               <div className="flex items-center space-x-2">
@@ -358,9 +351,9 @@ export default function SectionManagementStep({
               {/* Question Type Restrictions */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {formData.assessment_type === 'multi_type' ? 'Allowed Question Types' : 'Question Type'}
+                  Allowed Question Types
                 </label>
-                {formData.assessment_type === 'multi_type' ? (
+                {true ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {questionTypes.map((type) => (
                       <div key={type.value} className="flex items-center space-x-2">
@@ -396,10 +389,7 @@ export default function SectionManagementStep({
                   </Select>
                 )}
                 <p className="text-sm text-gray-500 mt-2">
-                  {formData.assessment_type === 'multi_type' 
-                    ? 'Select the question types allowed in this section. You can mix different types for multi-type assessments.'
-                    : 'Select the single question type for this section.'
-                  }
+                  Select the question types allowed in this section. You can mix different types for multi-type assessments.
                 </p>
               </div>
 

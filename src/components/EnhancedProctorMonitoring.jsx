@@ -50,81 +50,17 @@ const EnhancedProctorMonitoring = ({
   const eyeTrackingIntervalRef = useRef(null);
   const faceDetectionIntervalRef = useRef(null);
 
-  // Eye tracking detection (simplified implementation)
-  const detectEyeAlignment = useCallback(() => {
-    if (!settings?.eye_tracking_detection || !videoRef.current) return;
+  // Get violation severity
+  const getViolationSeverity = (type) => {
+    const highSeverity = ['multiple_faces', 'tab_switching', 'browser_lockdown'];
+    const mediumSeverity = ['eye_tracking', 'face_detection'];
+    const lowSeverity = ['copy_paste', 'right_click'];
 
-    // This is a simplified implementation
-    // In a real application, you would use computer vision libraries
-    // like MediaPipe, OpenCV, or specialized eye tracking APIs
-    
-    const video = videoRef.current;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    
-    // Simplified eye tracking logic
-    // In reality, you would analyze the video frame for eye position
-    const isAligned = Math.random() > 0.1; // Simulate 90% alignment
-    
-    if (!isAligned && eyeAlignment) {
-      setEyeAlignment(false);
-      addViolation('eye_tracking', 'Eyes not properly aligned with camera');
-    } else if (isAligned && !eyeAlignment) {
-      setEyeAlignment(true);
-    }
-  }, [settings?.eye_tracking_detection, eyeAlignment]);
-
-  // Face detection (simplified implementation)
-  const detectFaces = useCallback(() => {
-    if (!settings?.require_webcam || !videoRef.current) return;
-
-    // This is a simplified implementation
-    // In a real application, you would use face detection APIs
-    // like MediaPipe Face Detection, OpenCV, or cloud services
-    
-    const hasFace = Math.random() > 0.05; // Simulate 95% face detection
-    const hasMultipleFaces = Math.random() > 0.9; // Simulate 10% multiple faces
-    
-    if (!hasFace && faceDetected) {
-      setFaceDetected(false);
-      addViolation('face_detection', 'Face not detected in camera');
-    } else if (hasFace && !faceDetected) {
-      setFaceDetected(true);
-    }
-
-    if (hasMultipleFaces && !multipleFaces) {
-      setMultipleFaces(true);
-      addViolation('multiple_faces', 'Multiple people detected in camera');
-    } else if (!hasMultipleFaces && multipleFaces) {
-      setMultipleFaces(false);
-    }
-  }, [settings?.require_webcam, faceDetected, multipleFaces]);
-
-  // Add violation and handle termination
-  const addViolation = useCallback((type, message) => {
-    const violation = {
-      id: Date.now(),
-      type,
-      message,
-      timestamp: new Date(),
-      severity: getViolationSeverity(type)
-    };
-
-    setWarnings(prev => [...prev, violation]);
-    setViolationCount(prev => prev + 1);
-    setLastViolationTime(new Date());
-
-    onViolation?.(violation);
-
-    // Check for termination conditions
-    if (shouldTerminate(violation)) {
-      onTerminate?.(violation);
-    }
-  }, [onViolation, onTerminate]);
+    if (highSeverity.includes(type)) return 'high';
+    if (mediumSeverity.includes(type)) return 'medium';
+    if (lowSeverity.includes(type)) return 'low';
+    return 'low';
+  };
 
   // Determine if assessment should be terminated
   const shouldTerminate = useCallback((violation) => {
@@ -147,21 +83,161 @@ const EnhancedProctorMonitoring = ({
     return false;
   }, [violationCount, lastViolationTime, settings]);
 
-  // Get violation severity
-  const getViolationSeverity = (type) => {
-    const highSeverity = ['multiple_faces', 'tab_switching', 'browser_lockdown'];
-    const mediumSeverity = ['eye_tracking', 'face_detection'];
-    const lowSeverity = ['copy_paste', 'right_click'];
+  // Add violation and handle termination
+  const addViolation = useCallback((type, message) => {
+    const violation = {
+      id: Date.now(),
+      type,
+      message,
+      timestamp: new Date(),
+      severity: getViolationSeverity(type)
+    };
 
-    if (highSeverity.includes(type)) return 'high';
-    if (mediumSeverity.includes(type)) return 'medium';
-    if (lowSeverity.includes(type)) return 'low';
-    return 'low';
-  };
+    setWarnings(prev => [...prev, violation]);
+    setViolationCount(prev => prev + 1);
+    setLastViolationTime(new Date());
+
+    onViolation?.(violation);
+
+    // Check for termination conditions
+    if (shouldTerminate(violation)) {
+      onTerminate?.(violation);
+    }
+  }, [onViolation, onTerminate, shouldTerminate]);
+
+  // Eye tracking detection (simplified implementation)
+  const detectEyeAlignment = useCallback(() => {
+    if (!settings?.eye_tracking_detection || !videoRef.current) return;
+
+    // This is a simplified implementation
+    // In a real application, you would use computer vision libraries
+    // like MediaPipe, OpenCV, or specialized eye tracking APIs
+    
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    
+    // Simplified eye tracking logic
+    // In reality, you would analyze the video frame for eye position
+    const isAligned = Math.random() > 0.1; // Simulate 90% alignment
+    
+    setEyeAlignment(prevAlignment => {
+      if (!isAligned && prevAlignment) {
+        addViolation('eye_tracking', 'Eyes not properly aligned with camera');
+        return false;
+      } else if (isAligned && !prevAlignment) {
+        return true;
+      }
+      return prevAlignment;
+    });
+  }, [settings?.eye_tracking_detection, addViolation]);
+
+  // Face detection (simplified implementation)
+  const detectFaces = useCallback(() => {
+    if (!settings?.require_webcam || !videoRef.current) return;
+
+    // This is a simplified implementation
+    // In a real application, you would use face detection APIs
+    // like MediaPipe Face Detection, OpenCV, or cloud services
+    
+    const hasFace = Math.random() > 0.05; // Simulate 95% face detection
+    const hasMultipleFaces = Math.random() > 0.9; // Simulate 10% multiple faces
+    
+    setFaceDetected(prevFaceDetected => {
+      if (!hasFace && prevFaceDetected) {
+        addViolation('face_detection', 'Face not detected in camera');
+        return false;
+      } else if (hasFace && !prevFaceDetected) {
+        return true;
+      }
+      return prevFaceDetected;
+    });
+
+    setMultipleFaces(prevMultipleFaces => {
+      if (hasMultipleFaces && !prevMultipleFaces) {
+        addViolation('multiple_faces', 'Multiple people detected in camera');
+        return true;
+      } else if (!hasMultipleFaces && prevMultipleFaces) {
+        return false;
+      }
+      return prevMultipleFaces;
+    });
+  }, [settings?.require_webcam, addViolation]);
+
+
+  // Start monitoring
+  const startMonitoring = useCallback(() => {
+    if (!isMonitoring) {
+      setIsMonitoring(true);
+      onStatusChange?.('monitoring_started');
+
+      // Start eye tracking monitoring
+      if (settings?.eye_tracking_detection) {
+        setEyeTrackingStatus('active');
+        eyeTrackingIntervalRef.current = setInterval(() => {
+          detectEyeAlignment();
+        }, 1000);
+      }
+
+      // Start face detection monitoring
+      if (settings?.require_webcam) {
+        faceDetectionIntervalRef.current = setInterval(() => {
+          detectFaces();
+        }, 2000);
+      }
+
+      // Monitor for tab switching
+      if (settings?.tab_switching_detection) {
+        let lastFocusTime = Date.now();
+        
+        const handleVisibilityChange = () => {
+          if (document.hidden) {
+            const timeHidden = Date.now() - lastFocusTime;
+            if (timeHidden > 1000) { // More than 1 second
+              addViolation('tab_switching', 'Tab switching detected');
+            }
+          } else {
+            lastFocusTime = Date.now();
+          }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+      }
+
+      // Monitor for copy/paste
+      if (settings?.copy_paste_detection) {
+        const handleKeyDown = (e) => {
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x')) {
+            addViolation('copy_paste', 'Copy/paste attempt detected');
+          }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+      }
+
+      // Monitor for right-click
+      if (settings?.right_click_detection) {
+        const handleContextMenu = (e) => {
+          e.preventDefault();
+          addViolation('right_click', 'Right-click attempt detected');
+        };
+
+        document.addEventListener('contextmenu', handleContextMenu);
+      }
+    }
+  }, [settings, isMonitoring, onStatusChange, detectEyeAlignment, detectFaces, addViolation]);
 
   // Request permissions
   const requestPermissions = useCallback(async () => {
-    const newPermissions = { ...permissions };
+    const newPermissions = {
+      camera: false,
+      microphone: false,
+      screen: false
+    };
     const newWarnings = [];
 
     try {
@@ -246,80 +322,7 @@ const EnhancedProctorMonitoring = ({
       });
       setWarnings(newWarnings);
     }
-  }, [settings, permissions]);
-
-  // Start monitoring
-  const startMonitoring = useCallback(() => {
-    if (!isMonitoring) {
-      setIsMonitoring(true);
-      onStatusChange?.('monitoring_started');
-
-      // Start eye tracking monitoring
-      if (settings?.eye_tracking_detection) {
-        setEyeTrackingStatus('active');
-        eyeTrackingIntervalRef.current = setInterval(detectEyeAlignment, 1000);
-      }
-
-      // Start face detection monitoring
-      if (settings?.require_webcam) {
-        faceDetectionIntervalRef.current = setInterval(detectFaces, 2000);
-      }
-
-      // Monitor for tab switching
-      if (settings?.tab_switching_detection) {
-        let lastFocusTime = Date.now();
-        
-        const handleVisibilityChange = () => {
-          if (document.hidden) {
-            const timeHidden = Date.now() - lastFocusTime;
-            if (timeHidden > 1000) { // More than 1 second
-              addViolation('tab_switching', 'Tab switching detected');
-            }
-          } else {
-            lastFocusTime = Date.now();
-          }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        
-        // Cleanup function
-        return () => {
-          document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-      }
-
-      // Monitor for copy/paste
-      if (settings?.copy_paste_detection) {
-        const handleKeyDown = (e) => {
-          if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x')) {
-            addViolation('copy_paste', 'Copy/paste attempt detected');
-          }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        
-        // Cleanup function
-        return () => {
-          document.removeEventListener('keydown', handleKeyDown);
-        };
-      }
-
-      // Monitor for right-click
-      if (settings?.right_click_detection) {
-        const handleContextMenu = (e) => {
-          e.preventDefault();
-          addViolation('right_click', 'Right-click attempt detected');
-        };
-
-        document.addEventListener('contextmenu', handleContextMenu);
-        
-        // Cleanup function
-        return () => {
-          document.removeEventListener('contextmenu', handleContextMenu);
-        };
-      }
-    }
-  }, [settings, isMonitoring, onStatusChange, detectEyeAlignment, detectFaces, addViolation]);
+  }, [settings, startMonitoring]);
 
   // Stop monitoring
   const stopMonitoring = useCallback(() => {

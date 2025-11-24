@@ -85,7 +85,7 @@ const QuestionManagementInterface = ({ assessmentId, onQuestionsChange }) => {
   const fetchQuestions = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getAssessmentQuestions(assessmentId);
+      const response = await apiService.getAssessmentQuestionsForAdmin(assessmentId);
       
       if (response.success) {
         setQuestions(response.data);
@@ -189,7 +189,7 @@ const QuestionManagementInterface = ({ assessmentId, onQuestionsChange }) => {
       }
 
       const response = await apiService.updateAssessmentQuestion(assessmentId, selectedQuestion.id, questionData);
-      console.log('Update response:', response);
+      // console.log('Update response:', response);
       
       if (response.success) {
         toast({

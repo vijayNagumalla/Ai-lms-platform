@@ -68,7 +68,7 @@ export const getDashboardStats = async (req, res) => {
       success: true,
       data: {
         totalUsers,
-          totalColleges,
+        totalColleges,
         totalDepartments,
         recentActivities,
         userGrowth: userGrowthResult,
@@ -350,17 +350,17 @@ export const deleteCollege = async (req, res) => {
           'DELETE FROM users WHERE college_id = ?',
           [id]
         );
-        
+
         await connection.execute(
           'DELETE FROM departments WHERE college_id = ?',
           [id]
         );
-        
+
         await connection.execute(
           'DELETE FROM college_departments WHERE college_id = ?',
           [id]
         );
-        
+
         await connection.execute(
           'DELETE FROM colleges WHERE id = ?',
           [id]
@@ -586,7 +586,7 @@ export const deleteUser = async (req, res) => {
       message: 'Failed to delete user'
     });
   }
-}; 
+};
 
 // Restore deleted college
 export const restoreCollege = async (req, res) => {

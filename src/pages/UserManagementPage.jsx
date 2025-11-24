@@ -36,7 +36,9 @@ import {
   User,
   CheckSquare,
   Square,
-  Code
+  Code,
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import apiService from '@/services/api';
 
@@ -71,8 +73,13 @@ const UserManagementPage = () => {
   const [showParsedData, setShowParsedData] = useState(false);
   const [showPasswords, setShowPasswords] = useState({});
   const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [changedPassword, setChangedPassword] = useState(null);
+  const [isPasswordSuccessDialogOpen, setIsPasswordSuccessDialogOpen] = useState(false);
   const [userCreationResults, setUserCreationResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
+  const [skillsDialogOpen, setSkillsDialogOpen] = useState(false);
+  const [selectedUserSkills, setSelectedUserSkills] = useState('');
   
   // Multi-delete states
   const [selectedUsers, setSelectedUsers] = useState(new Set());
@@ -108,7 +115,22 @@ const UserManagementPage = () => {
     joining_year: new Date().getFullYear(),
     final_year: new Date().getFullYear() + 4,
     phone: '',
-    is_active: true
+    is_active: true,
+    // Faculty-specific fields
+    faculty_type: 'Internal',
+    address: '',
+    designation: '',
+    technical_skills: '',
+    languages_known: '',
+    current_location: '',
+    bank_account_number: '',
+    bank_name: '',
+    bank_ifsc: '',
+    bank_branch_address: '',
+    faculty_status: 'Available',
+    payment_type: 'Monthly',
+    pan_number: '',
+    payment_amount: ''
   });
 
   useEffect(() => {
@@ -170,7 +192,7 @@ const UserManagementPage = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-    }, 300);
+    }, 150); // Reduced from 300ms for faster response
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
@@ -462,8 +484,8 @@ const UserManagementPage = () => {
         return;
       }
       
-      // Validate college for non-super-admin users
-      if (formData.role !== 'super-admin' && !formData.college_id) {
+      // Validate college for non-super-admin and non-faculty users
+      if (formData.role !== 'super-admin' && formData.role !== 'faculty' && !formData.college_id) {
         toast({
           variant: "destructive",
           title: "Error",
@@ -511,6 +533,40 @@ const UserManagementPage = () => {
         return;
       }
       
+      // Validate faculty-specific fields
+      if (formData.role === 'faculty') {
+        if (!formData.phone) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Mobile number is required for faculty (will be used as password)"
+          });
+          return;
+        }
+        
+        // Validate mobile number format (10 digits)
+        const phoneRegex = /^[0-9]{10}$/;
+        const cleanPhone = formData.phone.replace(/[^0-9]/g, '');
+        if (!phoneRegex.test(cleanPhone)) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Invalid mobile number format. Please enter a 10-digit number"
+          });
+          return;
+        }
+        
+        // Validate payment amount
+        if (!formData.payment_amount || parseFloat(formData.payment_amount) <= 0) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: `Payment amount is required for ${formData.payment_type === 'Monthly' ? 'monthly' : 'per day'} payment`
+          });
+          return;
+        }
+      }
+      
       // Clean the data before sending to backend
       const cleanFormData = {
         ...formData,
@@ -526,6 +582,8 @@ const UserManagementPage = () => {
         if (data && data.password) {
           if (formData.role === 'student' && data.student_id) {
             message = `Student created! Roll Number: ${data.student_id}, Password: ${data.password}`;
+          } else if (formData.role === 'faculty') {
+            message = `Faculty created! Email: ${formData.email}, Password: ${data.password} (Mobile Number)`;
           } else {
             message = `User created! Password: ${data.password}`;
           }
@@ -537,6 +595,7 @@ const UserManagementPage = () => {
         });
         setIsAddDialogOpen(false);
         resetForm();
+        // Refresh users list to get updated plain_password
         fetchUsers();
       }
     } catch (error) {
@@ -666,7 +725,7 @@ const UserManagementPage = () => {
       }
 
       // Log detailed results
-      console.log('Bulk delete results:', results);
+      // console.log('Bulk delete results:', results);
       
       // Clear selection and refresh users
       setSelectedUsers(new Set());
@@ -756,6 +815,20 @@ const UserManagementPage = () => {
     }
   };
 
+  // Password validation helper
+  const validatePassword = (password) => {
+    const validations = {
+      minLength: password.length >= 8,
+      hasUpperCase: /[A-Z]/.test(password),
+      hasLowerCase: /[a-z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+    };
+    
+    const isValid = Object.values(validations).every(v => v === true);
+    return { isValid, validations };
+  };
+
   const handleChangePassword = async () => {
     try {
       if (!newPassword.trim()) {
@@ -767,24 +840,55 @@ const UserManagementPage = () => {
         return;
       }
 
+      // Client-side validation
+      const { isValid, validations } = validatePassword(newPassword);
+      if (!isValid) {
+        const missing = [];
+        if (!validations.minLength) missing.push("at least 8 characters");
+        if (!validations.hasUpperCase) missing.push("one uppercase letter");
+        if (!validations.hasLowerCase) missing.push("one lowercase letter");
+        if (!validations.hasNumber) missing.push("one number");
+        if (!validations.hasSpecialChar) missing.push("one special character (!@#$%^&*(),.?\":{}|<>)");
+        
+        toast({
+          variant: "destructive",
+          title: "Password Requirements Not Met",
+          description: `Password must contain: ${missing.join(", ")}`
+        });
+        return;
+      }
+
       const response = await apiService.patch(`/users/${selectedUser.id}/change-password`, {
         newPassword: newPassword.trim()
       });
       
       if (response.success) {
         const { data } = response;
-        let message = "Password changed successfully";
         
+        // Store the plain text password for display
         if (data && data.password) {
-          message = `Password changed! New password: ${data.password}`;
+          setChangedPassword(data.password);
+          setIsPasswordSuccessDialogOpen(true);
+        } else {
+          toast({
+            title: "Success",
+            description: "Password changed successfully"
+          });
         }
         
-        toast({
-          title: "Success",
-          description: message
-        });
+        // Update the user's plain_password in the local state immediately
+        if (response.data && response.data.password) {
+          setUsers(prevUsers => 
+            prevUsers.map(u => 
+              u.id === selectedUser.id 
+                ? { ...u, plain_password: response.data.password }
+                : u
+            )
+          );
+        }
         setIsChangePasswordDialogOpen(false);
         setNewPassword('');
+        setShowNewPassword(false);
         setSelectedUser(null);
         fetchUsers();
       }
@@ -801,6 +905,7 @@ const UserManagementPage = () => {
   const openChangePasswordDialog = (user) => {
     setSelectedUser(user);
     setNewPassword('');
+    setShowNewPassword(false);
     setIsChangePasswordDialogOpen(true);
   };
 
@@ -990,16 +1095,16 @@ const UserManagementPage = () => {
               return; // Skip header row
             }
             
-            console.log(`Processing row ${rowNumber}:`, {
-              name: getCellValue(row.getCell(1)),
-              email: getCellValue(row.getCell(2)),
-              phone: getCellValue(row.getCell(3)),
-              student_id: getCellValue(row.getCell(4)),
-              admission_type: getCellValue(row.getCell(5)),
-              batch: getCellValue(row.getCell(6)),
-              joining_year: getCellValue(row.getCell(7)),
-              final_year: getCellValue(row.getCell(8))
-            });
+            // console.log(`Processing row ${rowNumber}:`, {
+            //   name: getCellValue(row.getCell(1)),
+            //   email: getCellValue(row.getCell(2)),
+            //   phone: getCellValue(row.getCell(3)),
+            //   student_id: getCellValue(row.getCell(4)),
+            //   admission_type: getCellValue(row.getCell(5)),
+            //   batch: getCellValue(row.getCell(6)),
+            //   joining_year: getCellValue(row.getCell(7)),
+            //   final_year: getCellValue(row.getCell(8))
+            // });
             
             if (bulkUploadRole === 'super-admin') {
               const name = getCellValue(row.getCell(1)).trim();
@@ -1054,7 +1159,7 @@ const UserManagementPage = () => {
               }
               
               if (isNameValid && isEmailValid && isStudentIdValid && isAdmissionTypeValid && isBatchValid && isJoiningYearValid && isFinalYearValid && yearLogicValid) {
-                console.log(`Row ${rowNumber} validation passed, adding user`);
+                // console.log(`Row ${rowNumber} validation passed, adding user`);
                 users.push({
                   name: name,
                   email: email,
@@ -1070,28 +1175,28 @@ const UserManagementPage = () => {
                   is_active: true
                 });
               } else {
-                console.log(`Row ${rowNumber} validation failed:`, {
-                  isNameValid,
-                  isEmailValid,
-                  isStudentIdValid,
-                  isAdmissionTypeValid,
-                  isBatchValid,
-                  isJoiningYearValid,
-                  isFinalYearValid,
-                  yearLogicValid
-                });
+                // console.log(`Row ${rowNumber} validation failed:`, {
+                //   isNameValid,
+                //   isEmailValid,
+                //   isStudentIdValid,
+                //   isAdmissionTypeValid,
+                //   isBatchValid,
+                //   isJoiningYearValid,
+                //   isFinalYearValid,
+                //   yearLogicValid
+                // });
               }
             }
           });
           
           // If there are validation errors, reject with detailed error messages
           if (errors.length > 0) {
-            console.log('Validation errors found:', errors);
+            // console.log('Validation errors found:', errors);
             reject(new Error(`Validation errors found:\n${errors.join('\n')}`));
             return;
           }
           
-          console.log(`Parsing completed successfully. Found ${users.length} valid users:`, users);
+          // console.log(`Parsing completed successfully. Found ${users.length} valid users:`, users);
           resolve(users);
         } catch (error) {
           clearTimeout(timeoutId); // Clear timeout on error
@@ -1313,7 +1418,22 @@ const UserManagementPage = () => {
       joining_year: new Date().getFullYear(),
       final_year: new Date().getFullYear() + 4,
       phone: '',
-      is_active: true
+      is_active: true,
+      // Faculty-specific fields
+      faculty_type: 'Internal',
+      address: '',
+      designation: '',
+      technical_skills: '',
+      languages_known: '',
+      current_location: '',
+      bank_account_number: '',
+      bank_name: '',
+      bank_ifsc: '',
+      bank_branch_address: '',
+      faculty_status: 'Available',
+      payment_type: 'Monthly',
+      pan_number: '',
+      payment_amount: ''
     });
     setDepartments([]);
     setBatches([]);
@@ -1376,6 +1496,41 @@ const UserManagementPage = () => {
 
   const getDepartmentName = (departmentName) => {
     return departmentName || 'Not specified';
+  };
+
+  // Helper function to format technical skills
+  const formatTechnicalSkills = (skills) => {
+    if (!skills || !skills.trim()) return [];
+    return skills.split(',').map(skill => skill.trim()).filter(skill => skill.length > 0);
+  };
+
+  // Helper function to get missing faculty details
+  const getMissingFacultyDetails = (user) => {
+    const missing = [];
+    if (!user.faculty_type) missing.push('Faculty Type');
+    if (!user.address) missing.push('Address');
+    if (!user.designation) missing.push('Designation');
+    if (!user.technical_skills) missing.push('Technical Skills');
+    if (!user.languages_known) missing.push('Languages Known');
+    if (!user.current_location) missing.push('Current Location');
+    if (!user.bank_account_number) missing.push('Bank Account Number');
+    if (!user.bank_name) missing.push('Bank Name');
+    if (!user.bank_ifsc) missing.push('IFSC Code');
+    if (!user.bank_branch_address) missing.push('Branch Address');
+    if (!user.pan_number) missing.push('PAN Number');
+    if (!user.payment_amount) missing.push('Payment Amount');
+    return missing;
+  };
+
+  // Helper function to check if field is empty
+  const isEmpty = (value) => {
+    return !value || (typeof value === 'string' && !value.trim());
+  };
+
+  // Function to open skills dialog
+  const openSkillsDialog = (skills) => {
+    setSelectedUserSkills(skills || '');
+    setSkillsDialogOpen(true);
   };
 
   const getRoleBadgeColor = (role) => {
@@ -1562,7 +1717,7 @@ const UserManagementPage = () => {
                         </SelectContent>
                       </Select>
                     </div>
-                    {formData.role !== 'super-admin' && (
+                    {formData.role !== 'super-admin' && formData.role !== 'faculty' && (
                       <div className="space-y-2">
                         <Label htmlFor="college" className="text-sm font-medium">College *</Label>
                         <Select 
@@ -1776,20 +1931,275 @@ const UserManagementPage = () => {
                   </div>
                 )}
 
+                {/* Faculty Specific Fields */}
+                {formData.role === 'faculty' && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-primary border-b pb-2">Faculty Details</h3>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> Mobile number will be used as the password for faculty login.
+                      </p>
+                    </div>
+                    
+                    {/* Basic Faculty Information */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="phone" className="text-sm font-medium">Mobile Number *</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          value={formData.phone}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                            setFormData({...formData, phone: value});
+                          }}
+                          placeholder="Enter 10-digit mobile number"
+                          className="h-10"
+                          maxLength={10}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          This will be used as the password for faculty login
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="faculty_type" className="text-sm font-medium">Faculty Type *</Label>
+                        <Select 
+                          value={formData.faculty_type || 'Internal'} 
+                          onValueChange={(value) => setFormData({...formData, faculty_type: value})}
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select faculty type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Internal">Internal</SelectItem>
+                            <SelectItem value="Freelancer">Freelancer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="designation" className="text-sm font-medium">Designation</Label>
+                        <Input
+                          id="designation"
+                          value={formData.designation}
+                          onChange={(e) => setFormData({...formData, designation: e.target.value})}
+                          placeholder="e.g., Professor, Assistant Professor"
+                          className="h-10"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="current_location" className="text-sm font-medium">Current Location</Label>
+                        <Input
+                          id="current_location"
+                          value={formData.current_location}
+                          onChange={(e) => setFormData({...formData, current_location: e.target.value})}
+                          placeholder="Enter current location"
+                          className="h-10"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Address */}
+                    <div className="space-y-2">
+                      <Label htmlFor="address" className="text-sm font-medium">Address</Label>
+                      <Textarea
+                        id="address"
+                        value={formData.address}
+                        onChange={(e) => setFormData({...formData, address: e.target.value})}
+                        placeholder="Enter full address"
+                        rows={3}
+                        className="resize-none"
+                      />
+                    </div>
+                    
+                    {/* Skills and Languages */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="technical_skills" className="text-sm font-medium">Technical Skills</Label>
+                        <Textarea
+                          id="technical_skills"
+                          value={formData.technical_skills}
+                          onChange={(e) => setFormData({...formData, technical_skills: e.target.value})}
+                          placeholder="e.g., JavaScript, Python, React, Node.js (comma-separated)"
+                          rows={3}
+                          className="resize-none"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="languages_known" className="text-sm font-medium">Languages Known</Label>
+                        <Textarea
+                          id="languages_known"
+                          value={formData.languages_known}
+                          onChange={(e) => setFormData({...formData, languages_known: e.target.value})}
+                          placeholder="e.g., English, Hindi, Tamil (comma-separated)"
+                          rows={3}
+                          className="resize-none"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Bank Details */}
+                    <div className="space-y-4">
+                      <h4 className="text-md font-semibold text-primary border-b pb-2">Bank Details</h4>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_number" className="text-sm font-medium">Account Number</Label>
+                          <Input
+                            id="bank_account_number"
+                            value={formData.bank_account_number}
+                            onChange={(e) => setFormData({...formData, bank_account_number: e.target.value})}
+                            placeholder="Enter bank account number"
+                            className="h-10"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_name" className="text-sm font-medium">Bank Name</Label>
+                          <Input
+                            id="bank_name"
+                            value={formData.bank_name}
+                            onChange={(e) => setFormData({...formData, bank_name: e.target.value})}
+                            placeholder="Enter bank name"
+                            className="h-10"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_ifsc" className="text-sm font-medium">IFSC Code</Label>
+                          <Input
+                            id="bank_ifsc"
+                            value={formData.bank_ifsc}
+                            onChange={(e) => setFormData({...formData, bank_ifsc: e.target.value.toUpperCase()})}
+                            placeholder="Enter IFSC code"
+                            className="h-10"
+                            maxLength={11}
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_branch_address" className="text-sm font-medium">Branch Address</Label>
+                          <Textarea
+                            id="bank_branch_address"
+                            value={formData.bank_branch_address}
+                            onChange={(e) => setFormData({...formData, bank_branch_address: e.target.value})}
+                            placeholder="Enter branch address"
+                            rows={2}
+                            className="resize-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Status and Payment */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="faculty_status" className="text-sm font-medium">Status *</Label>
+                        <Select 
+                          value={formData.faculty_status || 'Available'} 
+                          onValueChange={(value) => setFormData({...formData, faculty_status: value})}
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Available">Available</SelectItem>
+                            <SelectItem value="Occupied">Occupied</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Default: Available
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="payment_type" className="text-sm font-medium">Payment Type *</Label>
+                        <Select 
+                          value={formData.payment_type || 'Monthly'} 
+                          onValueChange={(value) => setFormData({...formData, payment_type: value})}
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select payment type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Monthly">Monthly</SelectItem>
+                            <SelectItem value="Per Day">Per Day</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Default: Monthly
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* PAN Number and Payment Amount */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="pan_number" className="text-sm font-medium">PAN Number</Label>
+                        <Input
+                          id="pan_number"
+                          value={formData.pan_number}
+                          onChange={(e) => {
+                            const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+                            setFormData({...formData, pan_number: value});
+                          }}
+                          placeholder="ABCDE1234F"
+                          className="h-10"
+                          maxLength={10}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Format: ABCDE1234F (5 letters, 4 digits, 1 letter)
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="payment_amount" className="text-sm font-medium">
+                          Payment Amount ({formData.payment_type === 'Monthly' ? 'Monthly' : 'Per Day'}) *
+                        </Label>
+                        <Input
+                          id="payment_amount"
+                          type="number"
+                          value={formData.payment_amount}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9.]/g, '');
+                            setFormData({...formData, payment_amount: value});
+                          }}
+                          placeholder={formData.payment_type === 'Monthly' 
+                            ? 'Enter monthly payment amount (e.g., 50000)' 
+                            : 'Enter per day payment amount (e.g., 2000)'}
+                          className="h-10"
+                          min="0"
+                          step="0.01"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formData.payment_type === 'Monthly' 
+                            ? 'Enter the monthly payment amount in INR' 
+                            : 'Enter the per day payment amount in INR'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Additional Information Section */}
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold text-primary border-b pb-2">Additional Information</h3>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="phone" className="text-sm font-medium">Phone Number</Label>
-                      <Input
-                        id="phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                        placeholder="Enter phone number"
-                        className="h-10"
-                      />
-                    </div>
+                    {formData.role !== 'faculty' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="phone" className="text-sm font-medium">Phone Number</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                          placeholder="Enter phone number"
+                          className="h-10"
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="is_active" className="text-sm font-medium">Account Status</Label>
                       <div className="flex items-center space-x-3 pt-2">
@@ -2144,13 +2554,24 @@ const UserManagementPage = () => {
                               <th className="text-left p-3 font-medium">Contact</th>
                               {selectedRole !== 'super-admin' && (
                                 <>
-                                  <th className="text-left p-3 font-medium">College</th>
-                                  <th className="text-left p-3 font-medium">Department</th>
-                                  <th className="text-left p-3 font-medium">Batch</th>
-                                  {selectedRole === 'student' && (
+                                  {selectedRole === 'faculty' ? (
                                     <>
-                                      <th className="text-left p-3 font-medium">Student ID</th>
-                                      <th className="text-left p-3 font-medium">Current Year</th>
+                                      <th className="text-left p-3 font-medium">Faculty Type</th>
+                                      <th className="text-left p-3 font-medium">Technical Skills</th>
+                                      <th className="text-left p-3 font-medium">Payment Type</th>
+                                      <th className="text-left p-3 font-medium">Amount</th>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <th className="text-left p-3 font-medium">College</th>
+                                      <th className="text-left p-3 font-medium">Department</th>
+                                      <th className="text-left p-3 font-medium">Batch</th>
+                                      {selectedRole === 'student' && (
+                                        <>
+                                          <th className="text-left p-3 font-medium">Student ID</th>
+                                          <th className="text-left p-3 font-medium">Current Year</th>
+                                        </>
+                                      )}
                                     </>
                                   )}
                                 </>
@@ -2160,8 +2581,16 @@ const UserManagementPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                  {filteredUsers.map(user => (
-                              <tr key={user.id} className="border-b hover:bg-muted/30">
+                  {filteredUsers.map(user => {
+                              const missingDetails = user.role === 'faculty' ? getMissingFacultyDetails(user) : [];
+                              const hasMissingDetails = missingDetails.length > 0;
+                              
+                              return (
+                              <tr 
+                                key={user.id} 
+                                className={`border-b hover:bg-muted/30 ${hasMissingDetails ? 'relative' : ''}`}
+                                title={hasMissingDetails ? `Missing details: ${missingDetails.join(', ')}` : ''}
+                              >
                                 <td className="p-3">
                                   <div className="flex items-center justify-center">
                                     <input
@@ -2174,29 +2603,59 @@ const UserManagementPage = () => {
                                 </td>
                                 <td className="p-3">
                                   <div className="flex items-center space-x-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                      user.role === 'super-admin' ? 'bg-red-100 text-red-600' :
-                                      user.role === 'college-admin' ? 'bg-blue-100 text-blue-600' :
-                                      user.role === 'faculty' ? 'bg-green-100 text-green-600' :
-                                      user.role === 'student' ? 'bg-purple-100 text-purple-600' :
-                                      'bg-gray-100 text-gray-600'
-                                    }`}>
-                                      {user.role === 'super-admin' ? <Crown className="h-4 w-4" /> :
-                                       user.role === 'college-admin' ? <Building className="h-4 w-4" /> :
-                                       user.role === 'faculty' ? <GraduationCap className="h-4 w-4" /> :
-                                       user.role === 'student' ? <Users className="h-4 w-4" /> :
-                                       <User className="h-4 w-4" />}
-                        </div>
-                        <div>
+                                    {user.role === 'faculty' ? (
+                                      (() => {
+                                        const missingDetails = getMissingFacultyDetails(user);
+                                        const hasAllDetails = missingDetails.length === 0;
+                                        
+                                        return (
+                                          <div 
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                              hasAllDetails ? 'bg-green-500' : 'bg-red-500'
+                                            }`}
+                                            title={hasAllDetails 
+                                              ? 'All details filled' 
+                                              : `Missing details: ${missingDetails.join(', ')}`}
+                                          >
+                                            {hasAllDetails ? (
+                                              <div className="w-3 h-3 bg-white rounded-full"></div>
+                                            ) : (
+                                              <AlertCircle className="h-4 w-4 text-white" />
+                                            )}
+                                          </div>
+                                        );
+                                      })()
+                                    ) : (
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                        user.role === 'super-admin' ? 'bg-red-100 text-red-600' :
+                                        user.role === 'college-admin' ? 'bg-blue-100 text-blue-600' :
+                                        user.role === 'faculty' ? 'bg-green-100 text-green-600' :
+                                        user.role === 'student' ? 'bg-purple-100 text-purple-600' :
+                                        'bg-gray-100 text-gray-600'
+                                      }`}>
+                                        {user.role === 'super-admin' ? <Crown className="h-4 w-4" /> :
+                                         user.role === 'college-admin' ? <Building className="h-4 w-4" /> :
+                                         user.role === 'faculty' ? <GraduationCap className="h-4 w-4" /> :
+                                         user.role === 'student' ? <Users className="h-4 w-4" /> :
+                                         <User className="h-4 w-4" />}
+                                      </div>
+                                    )}
+                                    <div>
                                       <div className="font-medium">{user.name}</div>
                                       <div className="text-sm text-muted-foreground">{user.email}</div>
                                     </div>
                                   </div>
                                 </td>
                                 <td className="p-3">
-                            <Badge variant={user.is_active ? "default" : "secondary"}>
-                              {user.is_active ? "Active" : "Inactive"}
-                            </Badge>
+                                  {user.role === 'faculty' ? (
+                                    <Badge variant={user.faculty_status === 'Available' ? "default" : "secondary"}>
+                                      {user.faculty_status || 'Available'}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant={user.is_active ? "default" : "secondary"}>
+                                      {user.is_active ? "Active" : "Inactive"}
+                                    </Badge>
+                                  )}
                                 </td>
                                 <td className="p-3">
                                   <div className="text-sm">
@@ -2205,34 +2664,119 @@ const UserManagementPage = () => {
                                 </td>
                                 {selectedRole !== 'super-admin' && (
                                   <>
-                                    <td className="p-3">
-                                      <div className="flex items-center text-sm">
-                                        <Building className="h-3 w-3 mr-1 text-muted-foreground" />
-                              {getCollegeName(user.college_id)}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="text-sm text-muted-foreground">
-                                {getDepartmentName(user.department)}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="text-sm text-muted-foreground">
-                                {user.batch || 'Not set'}
-                                      </div>
-                                    </td>
-                                    {selectedRole === 'student' && (
+                                    {selectedRole === 'faculty' ? (
+                                      <>
+                                        {/* Faculty Type */}
+                                        <td className="p-3">
+                                          <div className={`text-sm ${isEmpty(user.faculty_type) ? 'text-muted-foreground italic' : ''}`}>
+                                            {isEmpty(user.faculty_type) ? (
+                                              <span 
+                                                className="flex items-center gap-1 text-orange-600 cursor-help"
+                                                title="Missing: Faculty Type"
+                                              >
+                                                <AlertCircle className="h-3 w-3" />
+                                                Not set
+                                              </span>
+                                            ) : (
+                                              user.faculty_type
+                                            )}
+                                          </div>
+                                        </td>
+                                        
+                                        {/* Technical Skills */}
+                                        <td className="p-3">
+                                          {isEmpty(user.technical_skills) ? (
+                                            <span 
+                                              className="flex items-center gap-1 text-sm text-orange-600 cursor-help"
+                                              title="Missing: Technical Skills"
+                                            >
+                                              <AlertCircle className="h-3 w-3" />
+                                              Not set
+                                            </span>
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-sm text-muted-foreground">
+                                                {formatTechnicalSkills(user.technical_skills).length} skill(s)
+                                              </span>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => openSkillsDialog(user.technical_skills)}
+                                                className="h-6 w-6 p-0"
+                                                title="View Technical Skills"
+                                              >
+                                                <Info className="h-3 w-3" />
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </td>
+                                        
+                                        {/* Payment Type */}
+                                        <td className="p-3">
+                                          <div className={`text-sm ${isEmpty(user.payment_type) ? 'text-muted-foreground italic' : ''}`}>
+                                            {isEmpty(user.payment_type) ? (
+                                              <span 
+                                                className="flex items-center gap-1 text-orange-600 cursor-help"
+                                                title="Missing: Payment Type"
+                                              >
+                                                <AlertCircle className="h-3 w-3" />
+                                                Not set
+                                              </span>
+                                            ) : (
+                                              user.payment_type
+                                            )}
+                                          </div>
+                                        </td>
+                                        
+                                        {/* Payment Amount */}
+                                        <td className="p-3">
+                                          <div className={`text-sm ${isEmpty(user.payment_amount) ? 'text-muted-foreground italic' : 'font-medium'}`}>
+                                            {isEmpty(user.payment_amount) ? (
+                                              <span 
+                                                className="flex items-center gap-1 text-orange-600 cursor-help"
+                                                title="Missing: Payment Amount"
+                                              >
+                                                <AlertCircle className="h-3 w-3" />
+                                                Not set
+                                              </span>
+                                            ) : (
+                                              `₹${parseFloat(user.payment_amount).toLocaleString('en-IN')}`
+                                            )}
+                                          </div>
+                                        </td>
+                                      </>
+                                    ) : (
                                       <>
                                         <td className="p-3">
-                                          <div className="text-sm font-medium">
-                                            {user.student_id || 'Not set'}
+                                          <div className="flex items-center text-sm">
+                                            <Building className="h-3 w-3 mr-1 text-muted-foreground" />
+                                            {getCollegeName(user.college_id)}
                                           </div>
                                         </td>
                                         <td className="p-3">
                                           <div className="text-sm text-muted-foreground">
-                                            {user.joining_year ? getCurrentYearDisplay(user.joining_year, user.final_year) : 'Not set'}
+                                            {getDepartmentName(user.department)}
                                           </div>
                                         </td>
+                                        <td className="p-3">
+                                          <div className="text-sm text-muted-foreground">
+                                            {user.batch || 'Not set'}
+                                          </div>
+                                        </td>
+                                        {selectedRole === 'student' && (
+                                          <>
+                                            <td className="p-3">
+                                              <div className="text-sm font-medium">
+                                                {user.student_id || 'Not set'}
+                                              </div>
+                                            </td>
+                                            <td className="p-3">
+                                              <div className="text-sm text-muted-foreground">
+                                                {user.joining_year ? getCurrentYearDisplay(user.joining_year, user.final_year) : 'Not set'}
+                                              </div>
+                                            </td>
+                                          </>
+                                        )}
                                       </>
                                     )}
                                   </>
@@ -2240,7 +2784,27 @@ const UserManagementPage = () => {
                                 <td className="p-3">
                                 <div className="flex items-center space-x-2">
                                 <code className="text-xs bg-muted px-2 py-1 rounded">
-                                      {showPasswords[user.id] ? (user.password || 'Not set') : '••••••••'}
+                                      {showPasswords[user.id] 
+                                        ? (() => {
+                                            // Always prioritize plain_password if it exists
+                                            if (user.plain_password) {
+                                              return user.plain_password;
+                                            }
+                                            // If no plain_password, check if password is a hash
+                                            if (user.password) {
+                                              const isHash = user.password.startsWith('$2a$') || 
+                                                           user.password.startsWith('$2b$') || 
+                                                           user.password.startsWith('$2y$') ||
+                                                           user.password.length > 60;
+                                              if (isHash) {
+                                                return <span className="text-orange-600 italic text-[10px]">Encrypted - Change password to view</span>;
+                                              }
+                                              // If it's not a hash and short, might be plain text (legacy)
+                                              return user.password;
+                                            }
+                                            return 'Not set';
+                                          })()
+                                        : '••••••••'}
                                   </code>
                                   <Button
                                     variant="ghost"
@@ -2251,11 +2815,11 @@ const UserManagementPage = () => {
                                   >
                                       {showPasswords[user.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                                   </Button>
-                                    {showPasswords[user.id] && (
+                                    {showPasswords[user.id] && user.plain_password && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                        onClick={() => copyToClipboard(user.password || '')}
+                                        onClick={() => copyToClipboard(user.plain_password)}
                                     className="h-6 w-6 p-0"
                                         title="Copy Password to Clipboard"
                                   >
@@ -2318,7 +2882,8 @@ const UserManagementPage = () => {
                       </div>
                                 </td>
                               </tr>
-                  ))}
+                            );
+                          })}
                           </tbody>
                         </table>
                         {filteredUsers.length === 0 && (
@@ -2652,14 +3217,81 @@ const UserManagementPage = () => {
           <div className="space-y-4">
             <div>
               <Label htmlFor="newPassword">New Password</Label>
-              <Input
-                id="newPassword"
-                type="text"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Enter new password"
-                className="mt-1"
-              />
+              <div className="relative mt-1">
+                <Input
+                  id="newPassword"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                >
+                  {showNewPassword ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              {newPassword && (
+                <div className="mt-3 space-y-1.5 text-sm">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Password Requirements:</p>
+                  {(() => {
+                    const { validations } = validatePassword(newPassword);
+                    return (
+                      <div className="space-y-1">
+                        <div className={`flex items-center gap-2 ${validations.minLength ? 'text-green-600' : 'text-gray-500'}`}>
+                          {validations.minLength ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                          <span>At least 8 characters</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${validations.hasUpperCase ? 'text-green-600' : 'text-gray-500'}`}>
+                          {validations.hasUpperCase ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                          <span>One uppercase letter (A-Z)</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${validations.hasLowerCase ? 'text-green-600' : 'text-gray-500'}`}>
+                          {validations.hasLowerCase ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                          <span>One lowercase letter (a-z)</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${validations.hasNumber ? 'text-green-600' : 'text-gray-500'}`}>
+                          {validations.hasNumber ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                          <span>One number (0-9)</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${validations.hasSpecialChar ? 'text-green-600' : 'text-gray-500'}`}>
+                          {validations.hasSpecialChar ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5" />
+                          )}
+                          <span>One special character (!@#$%^&*(),.?":{}|&lt;&gt;)</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
             <div className="flex justify-end space-x-2">
               <Button
@@ -2667,12 +3299,16 @@ const UserManagementPage = () => {
                 onClick={() => {
                   setIsChangePasswordDialogOpen(false);
                   setNewPassword('');
+                  setShowNewPassword(false);
                   setSelectedUser(null);
                 }}
               >
                 Cancel
               </Button>
-              <Button onClick={handleChangePassword}>
+              <Button 
+                onClick={handleChangePassword}
+                disabled={!newPassword || !validatePassword(newPassword).isValid}
+              >
                 <Save className="h-4 w-4 mr-2" />
                 Change Password
               </Button>
@@ -2680,6 +3316,89 @@ const UserManagementPage = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Technical Skills Dialog */}
+      <Dialog open={skillsDialogOpen} onOpenChange={setSkillsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Code className="h-5 w-5 text-primary" />
+              Technical Skills
+            </DialogTitle>
+            <DialogDescription>
+              List of technical skills for this faculty member
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedUserSkills && formatTechnicalSkills(selectedUserSkills).length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {formatTechnicalSkills(selectedUserSkills).map((skill, index) => (
+                    <Badge key={index} variant="outline" className="text-sm py-1 px-3">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Total: {formatTechnicalSkills(selectedUserSkills).length} skill(s)
+                </p>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground">
+                <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No technical skills specified</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Success Dialog - Shows plain text password for super admin */}
+      <AlertDialog open={isPasswordSuccessDialogOpen} onOpenChange={setIsPasswordSuccessDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-green-600" />
+              Password Changed Successfully
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <p>The password has been changed and stored securely in the database (hashed).</p>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">New Password (Plain Text):</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 bg-muted rounded-md font-mono text-sm border">
+                    {changedPassword}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      copyToClipboard(changedPassword || '');
+                    }}
+                    className="shrink-0"
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  ⚠️ This is the only time the password will be shown in plain text. Please copy it now if needed.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => {
+                setIsPasswordSuccessDialogOpen(false);
+                setChangedPassword(null);
+              }}
+            >
+              Got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Batch Mapping Dialog */}
       <Dialog open={isBatchMappingOpen} onOpenChange={setIsBatchMappingOpen}>

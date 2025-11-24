@@ -1,1328 +1,312 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Checkbox } from '@/components/ui/checkbox';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/components/ui/use-toast';
-import { motion, AnimatePresence } from 'framer-motion';
-import ProctorMonitoring from '@/components/ProctorMonitoring';
-import EnhancedProctorMonitoring from '@/components/EnhancedProctorMonitoring';
-import AssessmentFlow from '@/components/AssessmentFlow';
-import QuestionRenderer from '@/components/QuestionRenderer';
-import CodingQuestionRenderer from '@/components/CodingQuestionRenderer';
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle 
+} from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Progress } from '../components/ui/progress';
 import { 
   Clock, 
-  CheckCircle, 
-  Play, 
   Save, 
-  ChevronLeft,
-  ChevronRight,
-  Timer,
+  ArrowLeft, 
+  ArrowRight, 
+  Flag, 
+  CheckCircle,
   AlertTriangle,
-  Shield,
-  Monitor,
-  Camera,
-  WifiOff,
-  VolumeX,
-  Maximize,
-  BookOpen,
-  Target,
-  Award,
-  Check,
-  XCircle,
   Eye,
-  EyeOff,
-  Code,
-  FileText,
-  Hash,
-  List,
-  Grid,
-  X,
-  Lock,
-  Copy,
-  MousePointer,
-  Keyboard
+  EyeOff
 } from 'lucide-react';
-import apiService from '@/services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'react-hot-toast';
+import ProctoringManager from '../components/ProctoringManager';
+import QuestionRenderer from '../components/QuestionRenderer';
+import TimerComponent from '../components/TimerComponent';
+import NavigationPanel from '../components/NavigationPanel';
+import SubmissionModal from '../components/SubmissionModal';
 
-// Proctor Rules Component - Updated to use actual assessment settings
-const ProctorRules = ({ assessment, onAccept }) => {
-  const [accepted, setAccepted] = useState(false);
-  const [currentRule, setCurrentRule] = useState(0);
-
-  // Get actual proctoring settings from assessment
-  const proctoringSettings = assessment?.proctoring_settings || {};
-  const requireProctoring = assessment?.require_proctoring || false;
-
-  // Check if any proctoring features are enabled
-  const hasProctoringFeatures = proctoringSettings && (
-    proctoringSettings.browser_lockdown ||
-    proctoringSettings.tab_switching_detection ||
-    proctoringSettings.copy_paste_detection ||
-    proctoringSettings.right_click_detection ||
-    proctoringSettings.fullscreen_requirement ||
-    proctoringSettings.keyboard_shortcut_detection ||
-    proctoringSettings.require_webcam ||
-    proctoringSettings.require_microphone ||
-    proctoringSettings.screen_sharing_detection
-  );
-
-  // Show rules if proctoring is required OR if any proctoring features are enabled
-  if (!requireProctoring && !hasProctoringFeatures) {
-  
-    return null;
-  }
-
-
-
-  const proctorRules = [];
-
-  // Add rules based on actual enabled settings
-  if (proctoringSettings.browser_lockdown) {
-    proctorRules.push({
-      icon: <Lock className="h-8 w-8 text-blue-600" />,
-      title: "Browser Lockdown",
-      description: "Your browser will be locked to prevent switching tabs or opening other applications.",
-      warning: "Attempting to switch tabs may result in assessment termination."
-    });
-  }
-
-  if (proctoringSettings.tab_switching_detection) {
-    proctorRules.push({
-      icon: <Monitor className="h-8 w-8 text-green-600" />,
-      title: "Tab Switching Detection",
-      description: "The system will monitor for tab switching and application switching.",
-      warning: "Switching tabs or applications will be flagged as suspicious activity."
-    });
-  }
-
-  if (proctoringSettings.copy_paste_detection) {
-    proctorRules.push({
-      icon: <Copy className="h-8 w-8 text-red-600" />,
-      title: "Copy-Paste Detection",
-      description: "Copy and paste operations are monitored and may be restricted.",
-      warning: "Unauthorized copy-paste actions may result in penalties."
-    });
-  }
-
-  if (proctoringSettings.right_click_detection) {
-    proctorRules.push({
-      icon: <MousePointer className="h-8 w-8 text-orange-600" />,
-      title: "Right-Click Restriction",
-      description: "Right-click context menus are disabled during the assessment.",
-      warning: "Attempting to use right-click may be flagged as suspicious activity."
-    });
-  }
-
-  if (proctoringSettings.fullscreen_requirement) {
-    proctorRules.push({
-      icon: <Maximize className="h-8 w-8 text-purple-600" />,
-      title: "Fullscreen Requirement",
-      description: "The assessment must be taken in fullscreen mode.",
-      warning: "Exiting fullscreen mode may result in assessment termination."
-    });
-  }
-
-  if (proctoringSettings.keyboard_shortcut_detection) {
-    proctorRules.push({
-      icon: <Keyboard className="h-8 w-8 text-indigo-600" />,
-      title: "Keyboard Shortcut Monitoring",
-      description: "Certain keyboard shortcuts are monitored and may be restricted.",
-      warning: "Using restricted keyboard shortcuts may be flagged."
-    });
-  }
-
-  if (proctoringSettings.require_webcam) {
-    proctorRules.push({
-      icon: <Camera className="h-8 w-8 text-teal-600" />,
-      title: "Webcam Monitoring",
-      description: "Your webcam will be used to monitor your face during the assessment.",
-      warning: "Keep your face visible and well-lit throughout the assessment."
-    });
-  }
-
-  if (proctoringSettings.require_microphone) {
-    proctorRules.push({
-      icon: <VolumeX className="h-8 w-8 text-pink-600" />,
-      title: "Audio Monitoring",
-      description: "Your microphone will be monitored for background noise and communication.",
-      warning: "Avoid talking or making noise during the assessment."
-    });
-  }
-
-  // If no specific rules, show general proctoring message
-  if (proctorRules.length === 0) {
-    proctorRules.push({
-      icon: <Shield className="h-8 w-8 text-blue-600" />,
-      title: "Proctoring Enabled",
-      description: "This assessment uses automated proctoring to ensure academic integrity.",
-      warning: "Follow all assessment guidelines and avoid any suspicious behavior."
-    });
-  }
-
-  const handleNext = () => {
-    if (currentRule < proctorRules.length - 1) {
-      setCurrentRule(currentRule + 1);
-    } else {
-      setAccepted(true);
-    }
-  };
-
-  const handleAccept = () => {
-    onAccept();
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Simple header for proctor rules */}
-      <div className="bg-white border-b px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Shield className="h-6 w-6 text-blue-600" />
-            <h1 className="text-lg font-semibold">Assessment Proctor Rules</h1>
-          </div>
-          <div className="text-sm text-gray-500">
-            {assessment?.title || 'Assessment'}
-          </div>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-center p-4 flex-1">
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center mb-4">
-            <Shield className="h-12 w-12 text-blue-600" />
-          </div>
-          <CardTitle className="text-2xl font-bold">Assessment Proctor Rules</CardTitle>
-          <CardDescription>
-            Please read and understand these rules before starting your assessment
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Progress indicator */}
-          <div className="flex justify-center space-x-2">
-            {proctorRules.map((_, index) => (
-              <div
-                key={index}
-                className={`h-2 w-2 rounded-full ${
-                  index <= currentRule ? 'bg-blue-600' : 'bg-gray-300'
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Current rule */}
-          <motion.div
-            key={currentRule}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="text-center space-y-4"
-          >
-            <div className="flex justify-center">
-              {proctorRules[currentRule].icon}
-            </div>
-            <h3 className="text-xl font-semibold">{proctorRules[currentRule].title}</h3>
-            <p className="text-gray-600">{proctorRules[currentRule].description}</p>
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className="font-medium text-orange-800">
-                {proctorRules[currentRule].warning}
-              </AlertDescription>
-            </Alert>
-          </motion.div>
-
-          {/* Navigation buttons */}
-          <div className="flex justify-between pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setCurrentRule(Math.max(0, currentRule - 1))}
-              disabled={currentRule === 0}
-            >
-              <ChevronLeft className="h-4 w-4 mr-2" />
-              Previous
-            </Button>
-            
-            {currentRule < proctorRules.length - 1 ? (
-              <Button onClick={handleNext}>
-                Next
-                <ChevronRight className="h-4 w-4 ml-2" />
-              </Button>
-            ) : (
-              <Button onClick={handleAccept} disabled={!accepted}>
-                <Check className="h-4 w-4 mr-2" />
-                Accept & Continue
-              </Button>
-            )}
-          </div>
-
-          {/* Final acceptance */}
-          {currentRule === proctorRules.length - 1 && (
-            <div className="flex items-center space-x-2 justify-center pt-4">
-              <Checkbox
-                id="accept-rules"
-                checked={accepted}
-                onCheckedChange={setAccepted}
-              />
-              <label htmlFor="accept-rules" className="text-sm">
-                I understand and agree to follow all proctor rules
-              </label>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      </div>
-    </div>
-  );
-};
-
-// Assessment Instructions Component
-const AssessmentInstructions = ({ assessment, attemptInfo, onStart, onPasswordRequired }) => {
-  const [ready, setReady] = useState(false);
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
-      {/* Simple header for assessment instructions */}
-      <div className="bg-white border-b px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <BookOpen className="h-6 w-6 text-green-600" />
-            <h1 className="text-lg font-semibold">Assessment Instructions</h1>
-          </div>
-          <div className="text-sm text-gray-500">
-            {assessment?.title || 'Assessment'}
-          </div>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-center p-4 flex-1">
-      <Card className="w-full max-w-4xl">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center mb-4">
-            <BookOpen className="h-12 w-12 text-green-600" />
-          </div>
-          <CardTitle className="text-3xl font-bold">{assessment.title}</CardTitle>
-          <CardDescription className="text-lg">
-            Assessment Instructions & Guidelines
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Assessment Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <Timer className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-              <div className="font-semibold">Duration</div>
-              <div className="text-sm text-gray-600">{assessment.time_limit_minutes} minutes</div>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <Target className="h-8 w-8 text-green-600 mx-auto mb-2" />
-              <div className="font-semibold">Total Points</div>
-              <div className="text-sm text-gray-600">{assessment.total_points} points</div>
-            </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <Award className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-              <div className="font-semibold">Passing Score</div>
-              <div className="text-sm text-gray-600">{assessment.passing_score}%</div>
-            </div>
-          </div>
-
-          {/* Attempt Information */}
-          {attemptInfo && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold">Attempt Information:</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <Hash className="h-8 w-8 text-orange-600 mx-auto mb-2" />
-                  <div className="font-semibold">Current Attempt</div>
-                  <div className="text-sm text-gray-600">{attemptInfo.current_attempts + 1} of {attemptInfo.max_attempts || 'Unlimited'}</div>
-                </div>
-                {attemptInfo.time_between_attempts_hours > 0 && (
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <Clock className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-                    <div className="font-semibold">Time Between Attempts</div>
-                    <div className="text-sm text-gray-600">{attemptInfo.time_between_attempts_hours} hours</div>
-                  </div>
-                )}
-              </div>
-              {attemptInfo.current_attempts > 0 && (
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="text-sm text-blue-800">
-                    <strong>Previous Attempts:</strong> You have completed {attemptInfo.current_attempts} attempt(s) for this assessment.
-                    {attemptInfo.last_attempt_date && (
-                      <span> Your last attempt was on {new Date(attemptInfo.last_attempt_date).toLocaleDateString()}.</span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Instructions */}
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold">Instructions:</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                <span>Read each question carefully before answering</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                <span>You can navigate between questions using the navigation panel</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                <span>Save your progress regularly using the Save button</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                <span>Once submitted, you cannot change your answers</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Proctor Settings - Only show if proctoring is enabled */}
-          {assessment.require_proctoring && assessment.proctoring_settings && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold">Proctor Settings:</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {assessment.proctoring_settings.browser_lockdown && (
-                <div className="flex items-center space-x-2">
-                    <Lock className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm">Browser Lockdown: Enabled</span>
-                </div>
-                )}
-                {assessment.proctoring_settings.tab_switching_detection && (
-                <div className="flex items-center space-x-2">
-                    <Monitor className="h-4 w-4 text-green-600" />
-                    <span className="text-sm">Tab Switching Detection: Enabled</span>
-                </div>
-                )}
-                {assessment.proctoring_settings.copy_paste_detection && (
-                <div className="flex items-center space-x-2">
-                    <Copy className="h-4 w-4 text-red-600" />
-                    <span className="text-sm">Copy-Paste Detection: Enabled</span>
-                </div>
-                )}
-                {assessment.proctoring_settings.right_click_detection && (
-                <div className="flex items-center space-x-2">
-                    <MousePointer className="h-4 w-4 text-orange-600" />
-                    <span className="text-sm">Right-Click Restriction: Enabled</span>
-                </div>
-                )}
-                {assessment.proctoring_settings.fullscreen_requirement && (
-                  <div className="flex items-center space-x-2">
-                    <Maximize className="h-4 w-4 text-purple-600" />
-                    <span className="text-sm">Fullscreen Requirement: Enabled</span>
-                  </div>
-                )}
-                {assessment.proctoring_settings.require_webcam && (
-                  <div className="flex items-center space-x-2">
-                    <Camera className="h-4 w-4 text-teal-600" />
-                    <span className="text-sm">Webcam Monitoring: Enabled</span>
-                  </div>
-                )}
-                {assessment.proctoring_settings.require_microphone && (
-                  <div className="flex items-center space-x-2">
-                    <VolumeX className="h-4 w-4 text-pink-600" />
-                    <span className="text-sm">Audio Monitoring: Enabled</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Start Button */}
-          <div className="flex justify-center pt-6">
-            <Button 
-              size="lg" 
-              onClick={async () => {
-                if (assessment.access_password) {
-                  onPasswordRequired();
-                } else {
-                  setShowAssessmentFlow(true);
-                }
-              }} 
-              className="px-8 py-3"
-            >
-              <Play className="h-5 w-5 mr-2" />
-              Start Assessment
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      </div>
-    </div>
-  );
-};
-
-// Main Assessment Taking Component
 const StudentAssessmentTakingPage = () => {
   const { assessmentId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { toast } = useToast();
-
+  
   // State management
   const [assessment, setAssessment] = useState(null);
+  const [submission, setSubmission] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [isStarted, setIsStarted] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [showProctorRules, setShowProctorRules] = useState(true);
-  const [showInstructions, setShowInstructions] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [proctorWarnings, setProctorWarnings] = useState([]);
-  const [proctorStatus, setProctorStatus] = useState({});
-  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
-  const [showFullscreenDialog, setShowFullscreenDialog] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [showExitDialog, setShowExitDialog] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAnswers, setLastSavedAnswers] = useState({}); // Track last saved state
+  const [timeSpent, setTimeSpent] = useState({});
+  const [flaggedQuestions, setFlaggedQuestions] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [assessmentStatus, setAssessmentStatus] = useState('loading');
-  const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [maxTabSwitches, setMaxTabSwitches] = useState(0);
-  const [attemptInfo, setAttemptInfo] = useState(null);
-  const [isRetakeAttempt, setIsRetakeAttempt] = useState(false);
-  const [isResumed, setIsResumed] = useState(false);
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [showAssessmentFlow, setShowAssessmentFlow] = useState(false);
-  const [proctorViolations, setProctorViolations] = useState([]);
-  const [assessmentTerminated, setAssessmentTerminated] = useState(false);
-
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [proctoringEnabled, setProctoringEnabled] = useState(false);
+  const [proctoringStatus, setProctoringStatus] = useState('inactive');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [highContrastMode, setHighContrastMode] = useState(() => {
+    // Load from localStorage if available
+    if (typeof Storage !== 'undefined') {
+      const saved = localStorage.getItem('highContrastMode');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
   // Refs
-  const timerRef = useRef(null);
-  const autoSaveRef = useRef(null);
-  const timeRemainingRef = useRef(0);
-  const streamRef = useRef(null);
+  const autoSaveInterval = useRef(null);
+  const questionStartTime = useRef(Date.now());
+  const proctoringRef = useRef(null);
 
-  // Load assessment data
+  // Memoize current question to prevent unnecessary re-renders
+  const currentQuestion = useMemo(() => {
+    return questions[currentQuestionIndex] || null;
+  }, [questions, currentQuestionIndex]);
+
   useEffect(() => {
-    loadAssessment();
-  }, [assessmentId]);
-
-  // Auto-save functionality
-  useEffect(() => {
-    if (isStarted && !isSubmitted) {
-      autoSaveRef.current = setInterval(() => {
-        saveProgress();
-      }, 30000); // Auto-save every 30 seconds
-    }
-
+    startAssessment();
     return () => {
-      if (autoSaveRef.current) {
-        clearInterval(autoSaveRef.current);
+      if (autoSaveInterval.current) {
+        clearInterval(autoSaveInterval.current);
       }
-    };
-  }, [isStarted, isSubmitted, answers]);
-
-  // Activate proctoring features when assessment is loaded as in progress
-  useEffect(() => {
-    if (isStarted && assessment && assessment.proctoring_settings) {
-      activateProctoringFeatures();
-    }
-  }, [isStarted, assessment]);
-
-  // Timer functionality - Fixed timer implementation
-  useEffect(() => {
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    // Start timer only if assessment is started, not paused, not submitted, and has time remaining
-    if (isStarted && !isPaused && !isSubmitted && timeRemaining > 0) {
-      // Update the ref with current time
-      timeRemainingRef.current = timeRemaining;
-      
-      timerRef.current = setInterval(() => {
-        timeRemainingRef.current = timeRemainingRef.current - 1;
-        
-        if (timeRemainingRef.current <= 0) {
-          // Auto-submit when time runs out
-          setTimeout(() => {
-            if (!isSubmitted) {
-              handleSubmitAssessment();
-            }
-          }, 0);
-          setTimeRemaining(0);
-        } else {
-          setTimeRemaining(timeRemainingRef.current);
-        }
-      }, 1000);
-    }
-
-    // Cleanup function
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [isStarted, isPaused, isSubmitted, timeRemaining]);
-
-  // Prevent page exit
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      if (isStarted && !isSubmitted) {
-        e.preventDefault();
-        e.returnValue = 'Are you sure you want to leave? Your progress may be lost.';
-        return e.returnValue;
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isStarted, isSubmitted]);
-
-  // Cleanup proctoring features when component unmounts
-  useEffect(() => {
-    return () => {
-      cleanupProctoringFeatures();
     };
   }, []);
 
-  // Reset retake flag after a short delay to allow components to clear their data
   useEffect(() => {
-    if (isRetakeAttempt) {
-      const timer = setTimeout(() => {
-        setIsRetakeAttempt(false);
-      }, 1000); // Give components 1 second to clear their data
-      
-      return () => clearTimeout(timer);
+    // Start auto-save interval
+    if (submission) {
+      autoSaveInterval.current = setInterval(autoSave, 30000); // 30 seconds
     }
-  }, [isRetakeAttempt]);
 
-  const loadAssessment = async () => {
-    try {
-      setIsLoading(true);
+    return () => {
+      if (autoSaveInterval.current) {
+        clearInterval(autoSaveInterval.current);
+      }
+    };
+  }, [submission]);
+
+  useEffect(() => {
+    // Track time spent on current question
+    questionStartTime.current = Date.now();
+    
+    return () => {
+      if (currentQuestion) {
+        const timeSpentOnQuestion = Date.now() - questionStartTime.current;
+        setTimeSpent(prev => ({
+          ...prev,
+          [currentQuestion.id]: (prev[currentQuestion.id] || 0) + timeSpentOnQuestion
+        }));
+      }
+    };
+  }, [currentQuestionIndex, currentQuestion]);
+
+  // Keyboard shortcuts for navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in inputs/textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        // Allow Ctrl/Cmd shortcuts even in inputs
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          return; // Don't navigate when typing
+        }
+      }
+
+      // Prevent default for arrow keys
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+      }
+
+      // Arrow keys for navigation
+      if (e.key === 'ArrowLeft' && currentQuestionIndex > 0) {
+        goToPrevious();
+      } else if (e.key === 'ArrowRight' && currentQuestionIndex < questions.length - 1) {
+        goToNext();
+      }
       
-      // First, get assessment templates assigned to the student to check access and timing
-      const assessmentResponse = await apiService.getAssessmentInstances({ 
-        student_id: user.id
+      // Space or Enter to save answer
+      if ((e.key === ' ' || e.key === 'Enter') && !e.shiftKey && currentQuestion) {
+        if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          saveAnswer(currentQuestion.id, answers[currentQuestion.id], true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentQuestionIndex, questions.length, currentQuestion, answers, goToPrevious, goToNext, saveAnswer]);
+
+  const startAssessment = async () => {
+    try {
+      setLoading(true);
+      
+      // Get assessment details with specific error handling
+      const assessmentResponse = await fetch(`/api/assessments/${assessmentId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
 
-      if (assessmentResponse.success && assessmentResponse.data.length > 0) {
-        // Find the specific assessment template (the getAssessmentInstances actually returns templates)
-        const assessmentData = assessmentResponse.data.find(template => template.id === assessmentId);
-        
-        if (assessmentData) {
-          // Check if assessment is available based on timing
-          if (assessmentData.status === 'expired') {
-            setAssessmentStatus('expired');
-            toast({
-              variant: "destructive",
-              title: "Assessment Expired",
-              description: "This assessment is no longer available. The time limit has passed."
-            });
-            return;
-          } else if (assessmentData.status === 'scheduled') {
-            setAssessmentStatus('scheduled');
-            toast({
-              variant: "destructive",
-              title: "Assessment Not Started",
-              description: "This assessment has not started yet. Please wait for the scheduled time."
-            });
-            return;
-          } else if (assessmentData.status === 'completed') {
-            setAssessmentStatus('completed');
-            setIsSubmitted(true);
-            toast({
-              title: "Assessment Completed",
-              description: "You have already completed this assessment."
-            });
-            return;
-          }
-          
-          // Try to load proctoring settings from assessment template if not in template data
-          let assessmentWithProctoring = assessmentData;
-          if (!assessmentData.proctoring_settings) {
-            try {
-              // Set default proctoring settings based on the assessment type
-              assessmentWithProctoring = {
-                ...assessmentData,
-                proctoring_settings: {
-                  fullscreen_requirement: true,
-                  right_click_detection: true,
-                  copy_paste_detection: true,
-                  keyboard_shortcut_detection: true,
-                  tab_switching_detection: true
-                }
-              };
-            } catch (error) {
-              // Handle error silently
-            }
-          }
-          
-          setAssessment(assessmentWithProctoring);
-          const initialTime = assessmentData.time_limit_minutes * 60;
-          setTimeRemaining(initialTime);
-          timeRemainingRef.current = initialTime;
-          
-          // Set max tab switches from proctoring settings
-          const maxSwitches = assessmentWithProctoring.proctoring_settings?.max_tab_switches || 0;
-          setMaxTabSwitches(maxSwitches);
-          
-          // Check if there's an in-progress assessment that can be resumed
-          if (assessmentData.submission_status === 'in_progress') {
-            // Check if assessment can be resumed (not expired, time remaining)
-            const canResume = canResumeAssessment(assessmentData);
-            
-            if (canResume) {
-              // Skip attempt checking for resume - just load the assessment
-              setAssessmentStatus('available');
-            } else {
-              // Assessment is in progress but can't be resumed (expired)
-              setAssessmentStatus('expired');
-              toast({
-                variant: "destructive",
-                title: "Assessment Expired",
-                description: "This in-progress assessment has expired and can no longer be resumed."
-              });
-              return;
-            }
-          } else {
-            // Check attempt limits only for new attempts
-            try {
-              const attemptInfoResponse = await apiService.getAssessmentAttemptInfo(assessmentId);
-              
-              if (attemptInfoResponse.success) {
-                const attemptInfo = attemptInfoResponse.data;
-                
-                if (!attemptInfo.can_attempt) {
-                  if (attemptInfo.current_attempts >= attemptInfo.max_attempts) {
-                    setAssessmentStatus('max_attempts_reached');
-                    toast({
-                      variant: "destructive",
-                      title: "Maximum Attempts Reached",
-                      description: `You have reached the maximum number of attempts (${attemptInfo.max_attempts}) for this assessment.`
-                    });
-                    return;
-                  } else if (attemptInfo.time_until_next_attempt > 0) {
-                    setAssessmentStatus('waiting_period');
-                    toast({
-                      variant: "destructive",
-                      title: "Waiting Period",
-                      description: `You must wait ${attemptInfo.time_until_next_attempt} more hours before attempting this assessment again.`
-                    });
-                    return;
-                  }
-                }
-                
-                // Store attempt info for display
-                setAttemptInfo(attemptInfo);
-              }
-            } catch (error) {
-              console.error('Error checking attempt info:', error);
-              // Continue with assessment loading even if attempt check fails
-            }
-          }
-
-          // Load questions and progress after assessment data is loaded
-          const questionsAssessmentId = assessmentId;
-          const questionsResponse = await apiService.getAssessmentQuestions(questionsAssessmentId);
-          
-          if (questionsResponse.success) {
-            setQuestions(questionsResponse.data);
-          } else {
-            toast({
-              variant: "destructive",
-              title: "Error",
-              description: "Failed to load questions"
-            });
-          }
-
-          // Load existing progress
-          const progressResponse = await apiService.getAssessmentSubmission(questionsAssessmentId, user.id);
-          
-          if (progressResponse.success && progressResponse.data) {
-            // Check if this is a retake attempt (previous submission was completed)
-            const isRetakeAttempt = progressResponse.data.status === 'submitted' || progressResponse.data.status === 'completed';
-            
-            if (isRetakeAttempt) {
-              // For retake attempts, start fresh with no previous answers
-              console.log('Retake attempt detected - starting fresh');
-              console.log('Previous answers cleared, starting with empty state');
-              setAnswers({});
-              setIsStarted(false);
-              setIsSubmitted(false);
-              setTimeRemaining(initialTime);
-              timeRemainingRef.current = initialTime;
-              setIsRetakeAttempt(true);
-            } else if (progressResponse.data.status === 'in_progress') {
-              // For in-progress assessments, restore the saved state
-              setAnswers(progressResponse.data.answers || {});
-              setIsStarted(true);
-              setIsSubmitted(false);
-              
-              // Calculate remaining time based on start time and time limit
-              if (progressResponse.data.started_at && assessmentData.time_limit_minutes) {
-                const startTime = new Date(progressResponse.data.started_at);
-                const now = new Date();
-                const elapsedMinutes = Math.floor((now - startTime) / (1000 * 60));
-                const remainingMinutes = Math.max(0, assessmentData.time_limit_minutes - elapsedMinutes);
-                
-                if (remainingMinutes > 0) {
-                  const remainingSeconds = remainingMinutes * 60;
-                  setTimeRemaining(remainingSeconds);
-                  timeRemainingRef.current = remainingSeconds;
-                  
-                  // Skip instructions and proctor rules for resumed assessments
-                  setShowInstructions(false);
-                  setShowProctorRules(false);
-                  setIsResumed(true);
-                  
-                  toast({
-                    title: "Assessment Resumed",
-                    description: `Continuing from where you left off. ${remainingMinutes} minutes remaining.`
-                  });
-                } else {
-                  // Time has expired
-                  toast({
-                    variant: "destructive",
-                    title: "Time Expired",
-                    description: "The time limit for this assessment has been exceeded."
-                  });
-                  setAssessmentStatus('expired');
-                  return;
-                }
-              } else if (progressResponse.data.time_remaining) {
-                // Fallback to stored time remaining
-                setTimeRemaining(progressResponse.data.time_remaining);
-                timeRemainingRef.current = progressResponse.data.time_remaining;
-                setShowInstructions(false);
-                setShowProctorRules(false);
-              }
-            }
-          }
+      if (!assessmentResponse.ok) {
+        const errorData = await assessmentResponse.json().catch(() => ({}));
+        if (assessmentResponse.status === 401) {
+          toast.error('Your session has expired. Please log in again to continue.');
+          navigate('/login');
+          return;
+        } else if (assessmentResponse.status === 403) {
+          const message = errorData.message || 'Access denied. You do not have permission to access this assessment.';
+          toast.error(`${message} If you believe this is an error, please contact your instructor.`);
+          navigate('/student/assessments');
+          return;
+        } else if (assessmentResponse.status === 404) {
+          toast.error('Assessment not found. It may have been deleted, moved, or is no longer available. Please check with your instructor.');
+          navigate('/student/assessments');
+          return;
         } else {
-          setAssessmentStatus('not_found');
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Assessment not found"
-          });
+          const message = errorData.message || 'Failed to load assessment. Please check your internet connection and try again.';
+          throw new Error(message);
+        }
+      }
+
+      const assessmentData = await assessmentResponse.json();
+      
+      // Check if assessment has expired
+      if (assessmentData.data.end_date_only && assessmentData.data.end_time_only) {
+        const endDateTime = new Date(`${assessmentData.data.end_date_only}T${assessmentData.data.end_time_only}`);
+        if (new Date() > endDateTime) {
+          toast.error('This assessment has expired and is no longer available.');
+          navigate('/student/assessments');
           return;
         }
-      } else {
-        setAssessmentStatus('not_found');
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "No assessments found"
-        });
-        return;
       }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to load assessment: " + error.message
+      
+      setAssessment(assessmentData.data);
+      setProctoringEnabled(assessmentData.data.proctoring_enabled);
+
+      // Start assessment attempt with specific error handling
+      const startResponse = await fetch(`/api/student-assessments/${assessmentId}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            screenResolution: `${screen.width}x${screen.height}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          }
+        })
       });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const saveProgress = async () => {
-    if (isSubmitted) return;
-
-    try {
-      setIsSaving(true);
-      // The assessmentId from URL params is the assessment template ID
-      const saveAssessmentId = assessmentId;
-      
-      await apiService.saveAssessmentProgress(saveAssessmentId, {
-        student_id: user.id,
-        answers,
-        current_question: currentQuestionIndex,
-        time_remaining: timeRemainingRef.current
-      });
-      setLastSaved(new Date());
-    } catch (error) {
-      console.error('Save progress error:', error);
-      toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: "Failed to save your progress: " + (error.message || 'Unknown error')
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const requestProctoringPermissions = async () => {
-    if (!assessment?.proctoring_settings) return true;
-
-    const settings = assessment.proctoring_settings;
-    const permissions = { camera: false, microphone: false, screen: false };
-
-    try {
-      // Request camera permission if webcam monitoring is enabled
-      if (settings.require_webcam) {
-        try {
-          await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              width: { ideal: 640 }, 
-              height: { ideal: 480 },
-              facingMode: 'user'
-            } 
-          });
-          permissions.camera = true;
-        } catch (error) {
-          toast({
-            variant: "destructive",
-            title: "Camera Access Required",
-            description: "Please enable camera access to continue with this assessment."
-          });
-          return false;
-        }
-      }
-
-      // Request microphone permission if audio monitoring is enabled
-      if (settings.require_microphone) {
-        try {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-          permissions.microphone = true;
-        } catch (error) {
-          toast({
-            variant: "destructive",
-            title: "Microphone Access Required",
-            description: "Please enable microphone access to continue with this assessment."
-          });
-          return false;
-        }
-      }
-
-      // Request screen sharing permission if screen monitoring is enabled
-      if (settings.screen_sharing_detection) {
-        try {
-          await navigator.mediaDevices.getDisplayMedia({ video: true });
-          permissions.screen = true;
-        } catch (error) {
-          toast({
-            variant: "destructive",
-            title: "Screen Sharing Required",
-            description: "Please enable screen sharing to continue with this assessment."
-          });
-          return false;
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error requesting permissions:', error);
-      toast({
-        variant: "destructive",
-        title: "Permission Error",
-        description: "Failed to request required permissions. Please try again."
-      });
-      return false;
-    }
-  };
-
-  const handlePasswordSubmit = async () => {
-    if (passwordInput === assessment.access_password) {
-      setShowPasswordDialog(false);
-      setPasswordError('');
-      setPasswordInput('');
-      
-      // Show assessment flow instead of directly starting
-      setShowAssessmentFlow(true);
-    } else {
-      setPasswordError('Incorrect password. Please try again.');
-    }
-  };
-
-  // Handle proctor violations
-  const handleProctorViolation = (violation) => {
-    setProctorViolations(prev => [...prev, violation]);
-    
-    toast({
-      variant: "destructive",
-      title: "Proctor Violation Detected",
-      description: violation.message
-    });
-  };
-
-  // Handle assessment termination
-  const handleAssessmentTermination = (violation) => {
-    setAssessmentTerminated(true);
-    setIsStarted(false);
-    
-    toast({
-      variant: "destructive",
-      title: "Assessment Terminated",
-      description: `Assessment terminated due to: ${violation.message}`
-    });
-  };
-
-  // Handle assessment flow completion
-  const handleAssessmentFlowComplete = () => {
-    setShowAssessmentFlow(false);
-    handleStartAssessment();
-  };
-
-  // Handle assessment flow cancellation
-  const handleAssessmentFlowCancel = () => {
-    setShowAssessmentFlow(false);
-    // Cleanup any streams that might have been started
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-  };
-
-  const handleStartAssessment = async () => {
-    setShowInstructions(false);
-    setIsStarted(true);
-    const startTime = assessment.time_limit_minutes * 60;
-    setTimeRemaining(startTime);
-    timeRemainingRef.current = startTime;
-    
-    // Clear any previous answers when starting (especially for retakes)
-    setAnswers({});
-    
-    // Reset retake flag since we're now starting fresh
-    setIsRetakeAttempt(false);
-    
-    // Activate proctoring features
-    activateProctoringFeatures();
-  };
-
-  // Cleanup function to remove all proctoring event listeners
-  const cleanupProctoringFeatures = () => {
-    // Remove all stored event listeners
-    if (window.proctorEventListeners) {
-      const listeners = window.proctorEventListeners;
-      
-      // Remove specific event listeners
-      if (listeners.rightClick) {
-        document.removeEventListener('contextmenu', listeners.rightClick);
-      }
-      if (listeners.copy) {
-        document.removeEventListener('copy', listeners.copy);
-      }
-      if (listeners.paste) {
-        document.removeEventListener('paste', listeners.paste);
-      }
-      if (listeners.cut) {
-        document.removeEventListener('cut', listeners.cut);
-      }
-      if (listeners.contextMenu) {
-        document.removeEventListener('contextmenu', listeners.contextMenu);
-      }
-      if (listeners.keyboardShortcuts) {
-        document.removeEventListener('keydown', listeners.keyboardShortcuts);
-      }
-      if (listeners.f12) {
-        document.removeEventListener('keydown', listeners.f12);
-      }
-      if (listeners.inspect) {
-        document.removeEventListener('keydown', listeners.inspect);
-      }
-      if (listeners.tabSwitch) {
-        document.removeEventListener('visibilitychange', listeners.tabSwitch);
-      }
-      if (listeners.windowFocus) {
-        window.removeEventListener('focus', listeners.windowFocus);
-        document.removeEventListener('focusin', listeners.windowFocus);
-      }
-      if (listeners.windowBlur) {
-        window.removeEventListener('blur', listeners.windowBlur);
-        document.removeEventListener('focusout', listeners.windowBlur);
-      }
-      
-      window.proctorEventListeners = null;
-    }
-    
-    // Clear devtools detection interval
-    if (window.devtoolsInterval) {
-      clearInterval(window.devtoolsInterval);
-      window.devtoolsInterval = null;
-    }
-    
-    // Clear fullscreen monitoring
-    if (window.fullscreenChangeListener) {
-      document.removeEventListener('fullscreenchange', window.fullscreenChangeListener);
-      window.fullscreenChangeListener = null;
-    }
-    
-    // Exit fullscreen if still active
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-    
-    // Close fullscreen dialog
-    setShowFullscreenDialog(false);
-    
-    // Reset devtools state
-    window.devtoolsOpen = false;
-  };
-
-  const activateProctoringFeatures = () => {
-    if (assessment.proctoring_settings) {
-      // Request fullscreen if required
-      if (assessment.proctoring_settings.fullscreen_requirement) {
-        requestFullscreen();
-      }
-      
-      // Create named functions for event handlers so we can remove them later
-      const handleRightClick = (e) => e.preventDefault();
-      const handleCopy = (e) => e.preventDefault();
-      const handlePaste = (e) => e.preventDefault();
-      const handleCut = (e) => e.preventDefault();
-      const handleContextMenu = (e) => {
-        e.preventDefault();
-        toast({
-          variant: "destructive",
-          title: "Right-Click Blocked",
-          description: "Right-click is disabled during this assessment.",
-        });
-      };
-      
-      const handleKeyboardShortcuts = (e) => {
-        const blockedKeys = ['F11', 'F5', 'F12'];
-        const blockedCombos = ['Control+r', 'Control+Shift+r', 'Control+Shift+i', 'Control+u', 'Control+Shift+c', 'Control+Shift+j', 'Control+Shift+k', 'Control+Shift+e', 'Control+Shift+m'];
-        
-        const keyCombo = [
-          e.ctrlKey && 'Control',
-          e.shiftKey && 'Shift',
-          e.altKey && 'Alt',
-          e.key
-        ].filter(Boolean).join('+');
-        
-        if (blockedKeys.includes(e.key) || blockedCombos.includes(keyCombo)) {
-          e.preventDefault();
-          e.stopPropagation();
-          
-          // Show warning toast
-          toast({
-            variant: "destructive",
-            title: "Keyboard Shortcut Blocked",
-            description: `The shortcut ${keyCombo} is not allowed during this assessment.`,
-          });
-          
-          // Also show violation
-          handleProctorViolation({
-            type: 'keyboard_shortcut',
-            message: `Keyboard shortcut ${keyCombo} was blocked`,
-            severity: 'medium'
-          });
-        }
-      };
-      
-      const handleF12 = (e) => {
-        if (e.key === 'F12') {
-          e.preventDefault();
-          e.stopPropagation();
-          toast({
-            variant: "destructive",
-            title: "Developer Tools Blocked",
-            description: "Developer tools are not allowed during this assessment.",
-          });
-        }
-      };
-      
-      const handleInspect = (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key === 'I') {
-          e.preventDefault();
-          e.stopPropagation();
-          toast({
-            variant: "destructive",
-            title: "Inspect Element Blocked",
-            description: "Inspect element is not allowed during this assessment.",
-          });
-        }
-      };
-      
-      // Enhanced tab switching detection that works in fullscreen
-      const handleTabSwitch = () => {
-        if (document.hidden) {
-          // Increment tab switch count
-          setTabSwitchCount(prevCount => {
-            const newCount = prevCount + 1;
-            
-            // Check if max tab switches exceeded
-            if (maxTabSwitches > 0 && newCount > maxTabSwitches) {
-              // Auto-submit after a short delay
-              setTimeout(() => {
-                if (!isSubmitted) {
-                  handleSubmitAssessment();
-                }
-              }, 2000);
-              
-              return newCount;
-            }
-            
-            // Show warning for tab switching
-            handleProctorViolation({
-              type: 'tab_switch',
-              message: `Tab switching detected. Please return to the assessment. (${newCount}/${maxTabSwitches || 'unlimited'})`,
-              severity: maxTabSwitches > 0 && newCount >= maxTabSwitches ? 'high' : 'medium'
-            });
-            
-            return newCount;
-          });
-          
-          // Show toasts outside of state update to avoid render phase issues
-          const currentCount = tabSwitchCount + 1;
-          if (maxTabSwitches > 0 && currentCount > maxTabSwitches) {
-            toast({
-              variant: "destructive",
-              title: "Maximum Tab Switches Exceeded",
-              description: "Your assessment will be automatically submitted due to excessive tab switching.",
-            });
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json().catch(() => ({}));
+        if (startResponse.status === 403) {
+          if (errorData.message?.includes('exceeded') || errorData.message?.includes('attempts')) {
+            toast.error(`${errorData.message || 'You have exceeded the maximum number of attempts.'} Please contact your instructor if you need additional attempts.`);
+          } else if (errorData.message?.includes('expired') || errorData.message?.includes('time')) {
+            toast.error(`${errorData.message || 'Assessment time has expired.'} The assessment window has closed and cannot be started.`);
           } else {
-            toast({
-              variant: maxTabSwitches > 0 && currentCount >= maxTabSwitches ? "destructive" : "default",
-              title: "Tab Switching Detected",
-              description: maxTabSwitches > 0 
-                ? `Tab switch ${currentCount}/${maxTabSwitches}. ${currentCount >= maxTabSwitches ? 'Assessment will auto-submit!' : 'Please return to the assessment.'}`
-                : "Please return to the assessment tab immediately.",
-            });
+            toast.error(`${errorData.message || 'Access denied.'} You cannot start this assessment. Please contact your instructor if you believe this is an error.`);
           }
+          navigate('/student/assessments');
+          return;
+        } else if (startResponse.status === 400) {
+          toast.error(`${errorData.message || 'Invalid request.'} Please refresh the page and try again. If the problem persists, contact support.`);
+          navigate('/student/assessments');
+          return;
+        } else {
+          const message = errorData.message || 'Failed to start assessment. Please check your internet connection and try again. If the problem persists, contact support.';
+          throw new Error(message);
         }
-      };
-      
-      // Enhanced window focus detection
-      const handleWindowFocus = () => {
-        if (!document.hasFocus()) {
-          handleProctorViolation({
-            type: 'window_focus',
-            message: 'Window focus lost. Please return to the assessment.',
-            severity: 'medium'
-          });
-        }
-      };
-      
-      // Enhanced blur detection
-      const handleWindowBlur = () => {
-        handleProctorViolation({
-          type: 'window_blur',
-          message: 'Window focus lost. Please return to the assessment.',
-          severity: 'medium'
-        });
-      };
-      
-      // Store references to event listeners for cleanup
-      window.proctorEventListeners = {
-        rightClick: handleRightClick,
-        copy: handleCopy,
-        paste: handlePaste,
-        cut: handleCut,
-        contextMenu: handleContextMenu,
-        keyboardShortcuts: handleKeyboardShortcuts,
-        f12: handleF12,
-        inspect: handleInspect,
-        tabSwitch: handleTabSwitch,
-        windowFocus: handleWindowFocus,
-        windowBlur: handleWindowBlur
-      };
-      
-      // Enable right-click blocking if required
-      if (assessment.proctoring_settings.right_click_detection) {
-        document.addEventListener('contextmenu', window.proctorEventListeners.rightClick);
       }
-      
-      // Enable copy-paste blocking if required
-      if (assessment.proctoring_settings.copy_paste_detection) {
-        document.addEventListener('copy', window.proctorEventListeners.copy);
-        document.addEventListener('paste', window.proctorEventListeners.paste);
-        document.addEventListener('cut', window.proctorEventListeners.cut);
-      }
-      
-      // Enable keyboard shortcut blocking if required
-      if (assessment.proctoring_settings.keyboard_shortcut_detection) {
-        document.addEventListener('keydown', window.proctorEventListeners.keyboardShortcuts);
-        document.addEventListener('contextmenu', window.proctorEventListeners.contextMenu);
-        document.addEventListener('keydown', window.proctorEventListeners.f12);
-        document.addEventListener('keydown', window.proctorEventListeners.inspect);
-      }
-      
-      // Enhanced tab switching detection if required
-      if (assessment.proctoring_settings.tab_switching_detection) {
-        // Multiple detection methods for better coverage
-        document.addEventListener('visibilitychange', window.proctorEventListeners.tabSwitch);
-        window.addEventListener('focus', window.proctorEventListeners.windowFocus);
-        window.addEventListener('blur', window.proctorEventListeners.windowBlur);
-        document.addEventListener('focusin', window.proctorEventListeners.windowFocus);
-        document.addEventListener('focusout', window.proctorEventListeners.windowBlur);
-        
-        // Additional detection for fullscreen mode
-        if (assessment.proctoring_settings.fullscreen_requirement) {
-          // Monitor fullscreen state changes
-          document.addEventListener('fullscreenchange', () => {
-            if (!document.fullscreenElement) {
-              handleProctorViolation({
-                type: 'fullscreen_exit',
-                message: 'Fullscreen mode exited. Please return to fullscreen.',
-                severity: 'high'
-              });
-              setShowFullscreenDialog(true);
+
+      const startData = await startResponse.json();
+      setSubmission(startData.data);
+      setQuestions(assessmentData.data.questions || []);
+
+      // Load flagged questions from server if available
+      if (startData.data.submission_id || startData.data.id) {
+        try {
+          const submissionId = startData.data.submission_id || startData.data.id;
+          const responsesResponse = await fetch(`/api/student-assessments/${submissionId}/answers`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
           });
+          
+          if (responsesResponse.ok) {
+            const responsesData = await responsesResponse.json();
+            const flaggedSet = new Set();
+            if (responsesData.data && Array.isArray(responsesData.data)) {
+              responsesData.data.forEach(response => {
+                if (response.is_flagged) {
+                  flaggedSet.add(response.question_id);
+                }
+              });
+            }
+            setFlaggedQuestions(flaggedSet);
+          }
+        } catch (error) {
+          console.error('Error loading flagged questions:', error);
         }
       }
-      
-      // Store devtools detection interval
-      window.devtoolsInterval = setInterval(() => {
-        const threshold = 160;
-        const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-        const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+
+      // Sync offline answers if any exist
+      if (typeof Storage !== 'undefined' && (startData.data.submission_id || startData.data.id)) {
+        const submissionId = startData.data.submission_id || startData.data.id;
+        const offlineKeys = Object.keys(localStorage).filter(key => 
+          key.startsWith(`offline_answer_${submissionId}_`)
+        );
         
-        if (widthThreshold || heightThreshold) {
-          if (!window.devtoolsOpen) {
-            window.devtoolsOpen = true;
-            toast({
-              variant: "destructive",
-              title: "Developer Tools Detected",
-              description: "Developer tools are not allowed during this assessment.",
-            });
-            handleProctorViolation({
-              type: 'developer_tools',
-              message: 'Developer tools detected',
-              severity: 'high'
-            });
+        if (offlineKeys.length > 0) {
+          // Try to sync offline answers
+          for (const key of offlineKeys) {
+            try {
+              const offlineData = JSON.parse(localStorage.getItem(key));
+              if (offlineData && offlineData.questionId && offlineData.answer) {
+                await saveAnswer(offlineData.questionId, offlineData.answer, false);
+                localStorage.removeItem(key);
+              }
+            } catch (error) {
+              console.error('Error syncing offline answer:', error);
+            }
           }
-        } else {
-          window.devtoolsOpen = false;
         }
-      }, 500);
+      }
+
+      // Initialize proctoring if enabled
+      if (assessmentData.data.proctoring_enabled) {
+        initializeProctoring();
+      }
+
+    } catch (error) {
+      console.error('Error starting assessment:', error);
+      
+      // Specific error handling based on error type
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        toast.error('Network error. Please check your internet connection and try again.');
+      } else if (error.message.includes('timeout') || error.message.includes('network')) {
+        toast.error('Connection timeout. Please check your internet connection and try again.');
+      } else {
+        toast.error(error.message || 'Failed to start assessment. Please try again later.');
+      }
+      
+      navigate('/student/assessments');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const requestFullscreen = async () => {
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-        setIsFullscreen(true);
-        
-        // Monitor fullscreen state
-        const handleFullscreenChange = () => {
-          if (!document.fullscreenElement) {
-            setIsFullscreen(false);
-            setShowFullscreenDialog(true);
-          }
-        };
-        
-        window.fullscreenChangeListener = handleFullscreenChange;
-        document.addEventListener('fullscreenchange', window.fullscreenChangeListener);
-      }
-    } catch (error) {
-      // Handle fullscreen error silently
+  const initializeProctoring = () => {
+    if (proctoringRef.current) {
+      proctoringRef.current.initialize();
     }
   };
 
@@ -1331,811 +315,771 @@ const StudentAssessmentTakingPage = () => {
       ...prev,
       [questionId]: answer
     }));
-  };
-
-  const handleNextQuestion = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    // Cache answer in localStorage for offline support
+    if (typeof Storage !== 'undefined' && submission?.submissionId) {
+      try {
+        const cacheKey = `answer_cache_${submission.submissionId}_${questionId}`;
+        localStorage.setItem(cacheKey, JSON.stringify({
+          answer,
+          timestamp: Date.now()
+        }));
+      } catch (e) {
+        console.error('Failed to cache answer:', e);
+      }
     }
   };
 
-  const handlePreviousQuestion = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
-    }
-  };
-
-  const handleQuestionNavigation = (index) => {
-    setCurrentQuestionIndex(index);
-  };
-
-  const handleSubmitAssessment = useCallback(async () => {
-    try {
-      // Calculate time taken using current timeRemaining value from ref
-      const timeTaken = (assessment?.time_limit_minutes * 60) - timeRemainingRef.current;
-      
-      // The assessmentId from URL params is the assessment template ID
-      const submitAssessmentId = assessmentId;
-      
-      await apiService.submitAssessment(submitAssessmentId, {
-        student_id: user.id,
-        answers,
-        time_taken: timeTaken
-      });
-      
-      setIsSubmitted(true);
-      setShowSubmitDialog(false);
-      
-      // Cleanup proctoring features when assessment is submitted
-      cleanupProctoringFeatures();
-      
-      toast({
-        title: "Assessment Submitted",
-        description: "Your assessment has been submitted successfully"
-      });
-
-      // Navigate to results page
-      navigate(`/student/assessments/${assessmentId}/results`);
-    } catch (error) {
-      console.error('Assessment submission error:', error);
-      toast({
-        variant: "destructive",
-        title: "Submission Failed",
-        description: "Failed to submit assessment: " + (error.message || 'Unknown error')
-      });
-    }
-  }, [assessmentId, user.id, answers, navigate, toast, assessment?.time_limit_minutes]);
-
-  const formatTime = (seconds) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+  const saveAnswer = useCallback(async (questionId, answer, immediate = false) => {
+    if (!submission) return;
     
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getTimeColor = () => {
-    if (timeRemaining <= 300) return 'text-red-600'; // Last 5 minutes
-    if (timeRemaining <= 600) return 'text-orange-600'; // Last 10 minutes
-    return 'text-gray-600';
-  };
-
-  // Check if an assessment can be resumed
-  const canResumeAssessment = (assessment) => {
-    if (assessment.submission_status !== 'in_progress') {
-      return false;
+    // Validate answer format before saving
+    if (answer === undefined || answer === null || (typeof answer === 'string' && answer.trim() === '')) {
+      if (immediate) {
+        toast.error('Answer cannot be empty');
+      }
+      return;
     }
 
-    // Check if assessment has ended
-    if (assessment.end_date_only && assessment.end_time_only) {
-      const endDateTimeString = `${assessment.end_date_only}T${assessment.end_time_only}`;
-      const endDateTime = new Date(endDateTimeString);
-      const now = new Date();
+    // Retry queue for network failures with exponential backoff
+    const retrySave = async (retries = 3) => {
+      let timeLimitExceeded = false;
+      for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+          const timeSpentOnQuestion = timeSpent[questionId] || 0;
+          
+          const response = await fetch(`/api/student-assessments/${submission.submissionId}/answers`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              questionId,
+              answer,
+              timeSpent: Math.floor(timeSpentOnQuestion / 1000) // Convert to seconds
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = errorData.message || 'Failed to save answer';
+            const error = new Error(errorMessage);
+            
+            // Check for validation errors that shouldn't be retried
+            const isValidationError = errorMessage.includes('time limit has been exceeded') || 
+                                    errorMessage.includes('time has expired') ||
+                                    errorMessage.includes('expired') ||
+                                    errorMessage.includes('exceeded') ||
+                                    errorMessage.includes('does not belong to this assessment') ||
+                                    errorMessage.includes('has been deleted') ||
+                                    errorMessage.includes('no longer available') ||
+                                    errorMessage.includes('Unauthorized') ||
+                                    errorMessage.includes('permission');
+            
+            if (isValidationError) {
+              // Stop auto-save for validation errors
+              if (errorMessage.includes('time limit has been exceeded') || 
+                  errorMessage.includes('time has expired') ||
+                  errorMessage.includes('expired') ||
+                  errorMessage.includes('exceeded')) {
+                timeLimitExceeded = true;
+                console.warn('Assessment time limit exceeded, stopping saves');
+              } else {
+                console.warn('Validation error, stopping saves:', errorMessage);
+              }
+              throw error; // Don't retry
+            }
+            
+            throw error;
+          }
+
+          if (immediate) {
+            toast.success('Answer saved');
+          }
+          
+          // Update last saved state on success
+          setLastSavedAnswers(prev => ({
+            ...prev,
+            [questionId]: answer
+          }));
+          
+          return; // Success, exit retry loop
+        } catch (error) {
+          console.error(`Error saving answer (attempt ${attempt + 1}/${retries}):`, error);
+          
+          // Don't retry validation errors (time limit, question validation, etc.)
+          const isValidationError = error.message?.includes('time limit has been exceeded') ||
+                                   error.message?.includes('time has expired') ||
+                                   error.message?.includes('expired') ||
+                                   error.message?.includes('exceeded') ||
+                                   error.message?.includes('does not belong to this assessment') ||
+                                   error.message?.includes('has been deleted') ||
+                                   error.message?.includes('no longer available') ||
+                                   error.message?.includes('Unauthorized') ||
+                                   error.message?.includes('permission');
+          
+          if (isValidationError) {
+            // Stop all save attempts immediately for validation errors
+            throw error; // Exit immediately
+          }
+          
+          if (attempt === retries - 1) {
+            // Last attempt failed
+            if (immediate) {
+              toast.error(error.message || 'Failed to save answer. Answer will be saved when connection is restored.');
+            }
+            
+            // Store in offline storage if save fails
+            if (typeof Storage !== 'undefined') {
+              try {
+                const offlineKey = `offline_answer_${submission.submissionId}_${questionId}`;
+                localStorage.setItem(offlineKey, JSON.stringify({
+                  questionId,
+                  answer,
+                  timeSpent: Math.floor((timeSpent[questionId] || 0) / 1000),
+                  timestamp: Date.now()
+                }));
+              } catch (e) {
+                console.error('Failed to store offline answer:', e);
+              }
+            }
+            throw error;
+          }
+          
+          // Wait before retry (exponential backoff: 1s, 2s, 4s)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+      }
+    };
+    
+    return retrySave();
+  }, [submission, timeSpent]);
+
+  // Sequential save queue to prevent race conditions
+  const saveQueue = useRef([]);
+  const isSaving = useRef(false);
+
+  // Track changed answers to only save what's modified
+  const getChangedAnswers = useCallback(() => {
+    const changed = {};
+    Object.keys(answers).forEach(questionId => {
+      const currentAnswer = answers[questionId];
+      const lastSaved = lastSavedAnswers[questionId];
       
-      if (now > endDateTime) {
-        return false; // Assessment has ended
+      // Check if answer has changed
+      if (currentAnswer !== undefined && currentAnswer !== null) {
+        const hasChanged = JSON.stringify(currentAnswer) !== JSON.stringify(lastSaved);
+        if (hasChanged || lastSaved === undefined) {
+          changed[questionId] = currentAnswer;
+        }
+      }
+    });
+    return changed;
+  }, [answers, lastSavedAnswers]);
+
+  const autoSave = useCallback(async () => {
+    if (!submission || isSaving.current) return;
+
+    // Only save changed answers
+    const changedAnswers = getChangedAnswers();
+    
+    if (Object.keys(changedAnswers).length === 0) {
+      return; // Nothing to save
+    }
+
+    isSaving.current = true;
+    setSaving(true);
+    
+    const failedSaves = [];
+    
+    try {
+      // Process saves sequentially to prevent race conditions
+      for (const [questionId, answer] of Object.entries(changedAnswers)) {
+        try {
+          await saveAnswer(questionId, answer, false);
+          // Update last saved state on success
+          setLastSavedAnswers(prev => ({
+            ...prev,
+            [questionId]: answer
+          }));
+        } catch (error) {
+          console.error(`Failed to save answer for question ${questionId}:`, error);
+          
+          // Check for validation errors - stop auto-save for these
+          const isValidationError = error.message?.includes('time limit has been exceeded') ||
+                                   error.message?.includes('time has expired') ||
+                                   error.message?.includes('expired') ||
+                                   error.message?.includes('exceeded') ||
+                                   error.message?.includes('does not belong to this assessment') ||
+                                   error.message?.includes('has been deleted') ||
+                                   error.message?.includes('no longer available') ||
+                                   error.message?.includes('Unauthorized') ||
+                                   error.message?.includes('permission');
+          
+          if (isValidationError) {
+            // Handle time limit errors - trigger submission
+            if (error.message?.includes('time limit has been exceeded') || 
+                error.message?.includes('time has expired') ||
+                error.message?.includes('expired') ||
+                error.message?.includes('exceeded')) {
+              toast.warning('Assessment time limit exceeded. Auto-submitting...');
+              setTimeout(() => {
+                handleSubmitAssessment();
+              }, 1000);
+              return; // Exit auto-save loop
+            }
+            
+            // Handle other validation errors - stop auto-save but don't submit
+            if (error.message?.includes('does not belong to this assessment')) {
+              toast.error('This question is no longer part of the assessment. Please refresh the page.');
+              console.error('Question validation error - stopping auto-save for this question');
+              // Remove the question from changed answers to prevent further attempts
+              return; // Exit auto-save loop for this question
+            }
+            
+            if (error.message?.includes('has been deleted') || error.message?.includes('no longer available')) {
+              toast.error('Assessment is no longer available. Please contact your instructor.');
+              return; // Exit auto-save loop
+            }
+            
+            if (error.message?.includes('Unauthorized') || error.message?.includes('permission')) {
+              toast.error('You do not have permission to modify this assessment.');
+              return; // Exit auto-save loop
+            }
+            
+            // Generic validation error - stop auto-save
+            toast.error('Validation error: ' + error.message);
+            return; // Exit auto-save loop
+          }
+          
+          failedSaves.push(questionId);
+        }
+      }
+      
+      // Update last saved timestamp
+      if (failedSaves.length === 0) {
+        setLastSaved(new Date());
+      } else {
+        toast.error(`Failed to save ${failedSaves.length} answer${failedSaves.length > 1 ? 's' : ''}`);
+      }
+    } catch (error) {
+      console.error('Auto-save error:', error);
+      toast.error('Failed to auto-save some answers');
+    } finally {
+      isSaving.current = false;
+      setSaving(false);
+    }
+  }, [submission, getChangedAnswers, saveAnswer, handleSubmitAssessment]);
+
+  const navigateToQuestion = useCallback((index) => {
+    if (index >= 0 && index < questions.length) {
+      setCurrentQuestionIndex(index);
+    }
+  }, [questions.length]);
+
+  const goToPrevious = useCallback(() => {
+    if (currentQuestionIndex > 0) {
+      navigateToQuestion(currentQuestionIndex - 1);
+    }
+  }, [currentQuestionIndex, navigateToQuestion]);
+
+  const goToNext = useCallback(() => {
+    if (currentQuestionIndex < questions.length - 1) {
+      navigateToQuestion(currentQuestionIndex + 1);
+    }
+  }, [currentQuestionIndex, questions.length, navigateToQuestion]);
+
+  const flagQuestion = async (questionId) => {
+    if (!submission) return;
+    
+    const isCurrentlyFlagged = flaggedQuestions.has(questionId);
+    const newFlaggedState = !isCurrentlyFlagged;
+    
+    try {
+      const response = await fetch(`/api/student-assessments/${submission.submissionId}/questions/${questionId}/flag`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          isFlagged: newFlaggedState
+        })
+      });
+
+      if (response.ok) {
+        setFlaggedQuestions(prev => {
+          const newSet = new Set(prev);
+          if (newFlaggedState) {
+            newSet.add(questionId);
+            toast.success('Question flagged for review');
+          } else {
+            newSet.delete(questionId);
+            toast.success('Question unflagged');
+          }
+          return newSet;
+        });
+      } else {
+        throw new Error('Failed to update flag status');
+      }
+    } catch (error) {
+      console.error('Error flagging question:', error);
+      toast.error('Failed to update flag status');
+    }
+  };
+
+  const handleSubmitAssessment = async (retryCount = 0) => {
+    const maxRetries = 3;
+    const retryDelay = 1000; // 1 second
+    
+    try {
+      setSaving(true);
+      
+      // Validate required questions
+      const requiredQuestions = questions.filter(q => q.is_required !== false);
+      const unansweredRequired = requiredQuestions.filter(q => !answers[q.id] || (typeof answers[q.id] === 'string' && answers[q.id].trim() === ''));
+      
+      if (unansweredRequired.length > 0) {
+        toast.error(`Please answer ${unansweredRequired.length} required question${unansweredRequired.length > 1 ? 's' : ''} before submitting`);
+        setSaving(false);
+        return;
+      }
+      
+      // Save all answers first with retry logic
+      try {
+        await autoSave();
+      } catch (saveError) {
+        console.error('Error during auto-save before submission:', saveError);
+        // Continue anyway - answers may already be saved
+      }
+      
+      // Wait a moment to ensure saves complete
+      await new Promise(resolve => setTimeout(resolve, 150)); // Reduced from 300ms
+      
+      // Submit assessment with retry mechanism
+      const submitWithRetry = async (attempt) => {
+        const response = await fetch(`/api/student-assessments/${submission.submissionId}/submit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              screenResolution: `${screen.width}x${screen.height}`,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          
+          // Retry on network errors or 5xx errors
+          if ((errorData.message?.includes('network') || errorData.message?.includes('timeout') || response.status >= 500) && attempt < maxRetries) {
+            toast.warning(`Submission attempt ${attempt + 1} failed. Retrying...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
+            return submitWithRetry(attempt + 1);
+          }
+          
+          throw new Error(errorData.message || 'Failed to submit assessment');
+        }
+
+        return response;
+      };
+
+      const response = await submitWithRetry(0);
+      const result = await response.json();
+      toast.success('Assessment submitted successfully');
+      
+      // Clear offline storage
+      if (typeof Storage !== 'undefined') {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith(`offline_answer_${submission.submissionId}_`)) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+      
+      // Navigate to results if immediate results are enabled
+      if (assessment.show_results_immediately) {
+        navigate(`/student/assessments/${assessmentId}/results`);
+      } else {
+        navigate('/student/assessments');
+      }
+    } catch (error) {
+      console.error('Error submitting assessment:', error);
+      
+      // Store submission state for recovery
+      if (typeof Storage !== 'undefined' && submission?.submissionId) {
+        try {
+          localStorage.setItem(`pending_submission_${submission.submissionId}`, JSON.stringify({
+            submissionId: submission.submissionId,
+            assessmentId,
+            answers,
+            timestamp: Date.now(),
+            retryCount
+          }));
+        } catch (e) {
+          console.error('Failed to store pending submission:', e);
+        }
+      }
+      
+      if (retryCount < maxRetries && (error.message?.includes('network') || error.message?.includes('timeout'))) {
+        toast.error(`Submission failed (attempt ${retryCount + 1}/${maxRetries}). Retrying...`);
+        setTimeout(() => handleSubmitAssessment(retryCount + 1), retryDelay * (retryCount + 1));
+      } else {
+        toast.error(error.message || 'Failed to submit assessment. Your answers are saved. Please try again or contact support.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTimeUp = async () => {
+    toast.error('Time is up! Saving all answers before auto-submitting...');
+    
+    // Ensure all answers are saved before auto-submitting
+    try {
+      setSaving(true);
+      await autoSave();
+      
+      // Wait a moment to ensure saves complete
+      await new Promise(resolve => setTimeout(resolve, 300)); // Reduced from 500ms
+      
+      // Now submit
+      await handleSubmitAssessment();
+    } catch (error) {
+      console.error('Error during auto-submit:', error);
+      toast.error('Time expired. Attempting to submit your assessment...');
+      // Still try to submit even if auto-save had issues
+      try {
+        await handleSubmitAssessment();
+      } catch (submitError) {
+        console.error('Error during final submission:', submitError);
+        toast.error('Failed to auto-submit. Please contact support with your submission ID.');
       }
     }
-
-    // Check if there's time remaining based on time limit
-    if (assessment.started_at && assessment.time_limit_minutes) {
-      const startTime = new Date(assessment.started_at);
-      const now = new Date();
-      const elapsedMinutes = Math.floor((now - startTime) / (1000 * 60));
-      
-      if (elapsedMinutes >= assessment.time_limit_minutes) {
-        return false; // Time limit exceeded
-      }
-    }
-
-    return true;
   };
 
-  // Show proctor rules first if proctoring is required
-  // Check if any proctoring features are enabled
-  const hasProctoringFeatures = assessment?.proctoring_settings && (
-    assessment.proctoring_settings.browser_lockdown ||
-    assessment.proctoring_settings.tab_switching_detection ||
-    assessment.proctoring_settings.copy_paste_detection ||
-    assessment.proctoring_settings.right_click_detection ||
-    assessment.proctoring_settings.fullscreen_requirement ||
-    assessment.proctoring_settings.keyboard_shortcut_detection ||
-    assessment.proctoring_settings.require_webcam ||
-    assessment.proctoring_settings.require_microphone ||
-    assessment.proctoring_settings.screen_sharing_detection
-  );
+  const getProgressPercentage = () => {
+    if (questions.length === 0) return 0;
+    
+    // Calculate weighted progress based on question points
+    let totalPoints = 0;
+    let answeredPoints = 0;
+    
+    questions.forEach((q, index) => {
+      const questionPoints = parseFloat(q.points) || 1;
+      totalPoints += questionPoints;
+      
+      // If question is answered, add its points to answeredPoints
+      if (answers[q.id] && 
+          (typeof answers[q.id] === 'string' ? answers[q.id].trim() !== '' : 
+           answers[q.id] !== null && answers[q.id] !== undefined)) {
+        answeredPoints += questionPoints;
+      }
+    });
+    
+    // Calculate percentage based on points if available, otherwise use question count
+    if (totalPoints > 0) {
+      return (answeredPoints / totalPoints) * 100;
+    }
+    
+    // Fallback to simple question count percentage
+    const answeredCount = questions.filter(q => answers[q.id]).length;
+    return (answeredCount / questions.length) * 100;
+  };
 
+  const getAnsweredCount = () => {
+    return Object.keys(answers).length;
+  };
 
+  const getFlaggedCount = () => {
+    return flaggedQuestions.size;
+  };
 
-  // Show proctor rules only if proctoring is actually required
-  if (showProctorRules && assessment && (assessment.require_proctoring || hasProctoringFeatures)) {
-  
-    return (
-      <ProctorRules
-        assessment={assessment}
-        onAccept={() => setShowProctorRules(false)}
-      />
-    );
-  }
-
-  // Show instructions if not started yet and assessment is loaded
-  if (showInstructions && assessment && !isStarted && assessmentStatus === 'available') {
-  
-    return (
-      <AssessmentInstructions
-        assessment={assessment}
-        attemptInfo={attemptInfo}
-        onStart={handleStartAssessment}
-        onPasswordRequired={() => setShowPasswordDialog(true)}
-      />
-    );
-  }
-
-  // Fallback: If no proctoring rules and no instructions shown, but assessment is loaded and not started
-  if (assessment && !isStarted && assessmentStatus === 'available' && !showProctorRules && !showInstructions) {
-  
-    return (
-      <AssessmentInstructions
-        assessment={assessment}
-        attemptInfo={attemptInfo}
-        onStart={handleStartAssessment}
-        onPasswordRequired={() => setShowPasswordDialog(true)}
-      />
-    );
-  }
-
-  // Loading state
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading assessment...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading assessment...</p>
         </div>
       </div>
     );
   }
 
-  // Error states
-  if (assessmentStatus === 'not_found') {
+  if (!assessment || !submission) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Not Found</h2>
-            <p className="text-gray-600 mb-4">The assessment could not be loaded. Please check the URL or contact support.</p>
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate('/student/assessments');
-            }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (assessmentStatus === 'expired') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <Clock className="h-16 w-16 text-red-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Expired</h2>
-            <p className="text-gray-600 mb-4">This assessment is no longer available. The time limit has passed.</p>
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate('/student/assessments');
-            }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (assessmentStatus === 'scheduled') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <Timer className="h-16 w-16 text-orange-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Not Started</h2>
-            <p className="text-gray-600 mb-4">This assessment has not started yet. Please wait for the scheduled time.</p>
-          <Button onClick={() => {
-            cleanupProctoringFeatures();
-            navigate('/student/assessments');
-          }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (assessmentStatus === 'max_attempts_reached') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Maximum Attempts Reached</h2>
-            <p className="text-gray-600 mb-4">
-              You have reached the maximum number of attempts for this assessment. 
-              {attemptInfo && ` (${attemptInfo.current_attempts}/${attemptInfo.max_attempts} attempts used)`}
-            </p>
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate('/student/assessments');
-            }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (assessmentStatus === 'waiting_period') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <Clock className="h-16 w-16 text-yellow-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Waiting Period</h2>
-            <p className="text-gray-600 mb-4">
-              You must wait before attempting this assessment again.
-              {attemptInfo && attemptInfo.time_until_next_attempt > 0 && 
-                ` Please try again in ${attemptInfo.time_until_next_attempt} hours.`
-              }
-            </p>
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate('/student/assessments');
-            }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Assessment completed
-  if (isSubmitted || assessmentStatus === 'completed') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Completed</h2>
-            <p className="text-gray-600 mb-4">Your assessment has been submitted successfully.</p>
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate(`/student/assessments/${assessmentId}/results`);
-            }}>
-              View Results
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Error state - no assessment or questions loaded
-  if (!assessment || !questions.length) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Not Found</h2>
-            <p className="text-gray-600 mb-4">The assessment could not be loaded. Please check the URL or contact support.</p>
-            <div className="space-y-2">
-              <Button onClick={() => {
-                cleanupProctoringFeatures();
-                navigate('/student/assessments');
-              }}>
-              Back to Assessments
-            </Button>
-
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const currentQuestion = questions[currentQuestionIndex];
-  
-  // Calculate progress considering coding questions completion status
-  // For coding questions: only count as complete if ALL test cases pass
-  // For other questions: count as complete if answered
-  const completedQuestions = questions.reduce((count, question) => {
-    const isAnswered = answers[question.id];
-    if (!isAnswered) return count;
-    
-    if (question.question_type === 'coding') {
-      // For coding questions, check if all test cases passed
-      const isCodingComplete = isAnswered && 
-        answers[question.id]?.testResults && 
-        answers[question.id]?.testResults.length > 0 &&
-        answers[question.id]?.testResults.every(result => 
-          result.result?.verdict?.status === 'accepted'
-        );
-      return isCodingComplete ? count + 1 : count;
-    } else {
-      // For non-coding questions, just check if answered
-      return count + 1;
-    }
-  }, 0);
-  
-  const progress = (completedQuestions / questions.length) * 100;
-  const isCodingQuestion = currentQuestion?.question_type === 'coding';
-
-
-
-  // Show assessment flow if needed
-  if (showAssessmentFlow && assessment) {
-    return (
-      <AssessmentFlow
-        assessment={assessment}
-        onStart={handleAssessmentFlowComplete}
-        onCancel={handleAssessmentFlowCancel}
-        isResume={isResumed}
-      />
-    );
-  }
-
-  // Show termination screen if assessment was terminated
-  if (assessmentTerminated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Assessment Terminated</h2>
-            <p className="text-gray-600 mb-4">
-              Your assessment has been terminated due to proctor violations.
-            </p>
-            {proctorViolations.length > 0 && (
-              <div className="text-left mb-4">
-                <h3 className="font-medium mb-2">Violations:</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  {proctorViolations.slice(-3).map((violation, index) => (
-                    <li key={index}>• {violation.message}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <Button onClick={() => {
-              cleanupProctoringFeatures();
-              navigate('/student/assessments');
-            }}>
-              Back to Assessments
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="text-center">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Assessment Not Found</h2>
+          <p className="text-gray-600 mb-4">The assessment you're looking for doesn't exist or you don't have access to it.</p>
+          <Button onClick={() => navigate('/student/assessments')}>
+            Back to Assessments
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Access Password Dialog */}
-      <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Lock className="h-5 w-5" />
-              <span>Access Password Required</span>
-            </DialogTitle>
-            <DialogDescription>
-              This assessment requires an access password to begin. Please enter the password provided by your instructor.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Access Password
-              </label>
-              <input
-                id="password"
-                type="text"
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  setPasswordError('');
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handlePasswordSubmit();
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter access password"
-                autoFocus
-              />
-              {passwordError && (
-                <p className="mt-1 text-sm text-red-600">{passwordError}</p>
+      {/* Proctoring Manager */}
+      {proctoringEnabled && (
+        <>
+          <ProctoringManager
+            ref={proctoringRef}
+            submissionId={submission.submissionId}
+            onViolation={(violation) => {
+              console.log('Proctoring violation:', violation);
+              toast.error(`Proctoring violation: ${violation.type}. ${violation.message || 'This may affect your assessment score.'}`);
+            }}
+            onStatusChange={(status) => {
+              setProctoringStatus(status);
+            }}
+          />
+          {/* Proctoring Status Indicator */}
+          <div className="fixed bottom-4 right-4 z-50 bg-white rounded-lg shadow-lg border p-3">
+            <div className="flex items-center space-x-2 text-sm">
+              {proctoringStatus === 'active' ? (
+                <>
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-green-700">Proctoring Active</span>
+                </>
+              ) : proctoringStatus === 'error' ? (
+                <>
+                  <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+                  <span className="text-red-700">Proctoring Error</span>
+                </>
+              ) : (
+                <>
+                  <div className="h-2 w-2 bg-gray-400 rounded-full"></div>
+                  <span className="text-gray-600">Proctoring Inactive</span>
+                </>
               )}
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowPasswordDialog(false);
-                setPasswordInput('');
-                setPasswordError('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handlePasswordSubmit}>
-              Start Assessment
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {/* Header - Maximized for screen usage */}
-      <div className="bg-white border-b sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                {!isCodingQuestion && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowSidebar(!showSidebar)}
-                    className="lg:hidden"
-                  >
-                    <List className="h-4 w-4" />
-                  </Button>
-                )}
-                <h1 className="text-xl font-semibold">{assessment.title}</h1>
-                {isResumed && (
-                  <Badge className="bg-orange-100 text-orange-800 border-orange-200 ml-2">
-                    <Play className="h-3 w-3 mr-1" />
-                    Resumed
-                  </Badge>
-                )}
-                {attemptInfo && (
-                  <Badge variant="secondary" className="ml-2">
-                    Attempt {attemptInfo.current_attempts + 1} of {attemptInfo.max_attempts || '∞'}
-                  </Badge>
+        </>
+      )}
+
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              {/* Navigation History - Back Button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/student/assessments')}
+                className="mr-3"
+                title="Back to Assessments"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back
+              </Button>
+              <h1 className="text-xl font-semibold text-gray-900">
+                {assessment.title}
+              </h1>
+              {/* Persistent Auto-save Indicator */}
+              <div className="ml-4 flex items-center text-sm">
+                {saving ? (
+                  <div className="flex items-center text-blue-600">
+                    <Save className="h-4 w-4 mr-1 animate-spin" />
+                    Saving...
+                  </div>
+                ) : lastSaved ? (
+                  <div className="flex items-center text-green-600" title={`Last saved: ${lastSaved.toLocaleTimeString()}`}>
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Saved</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center text-gray-400" title="No changes to save">
+                    <Save className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Not saved</span>
+                  </div>
                 )}
               </div>
-              <Badge variant="outline">Question {currentQuestionIndex + 1} of {questions.length}</Badge>
             </div>
             
             <div className="flex items-center space-x-4">
-              {/* Fullscreen Warning */}
-              {showFullscreenDialog && (
-                <div className="flex items-center space-x-2 text-orange-600 bg-orange-50 px-3 py-1 rounded-md">
-                  <Maximize className="h-4 w-4" />
-                  <span className="text-sm font-medium">Fullscreen Required</span>
-                </div>
-              )}
+              <TimerComponent
+                duration={assessment.duration_minutes * 60}
+                onTimeUp={handleTimeUp}
+                className="text-lg font-mono"
+              />
               
-              {/* Timer */}
-              <div className={`flex items-center space-x-2 ${getTimeColor()}`}>
-                <Clock className="h-5 w-5" />
-                <span className="font-mono text-lg font-semibold">
-                  {formatTime(timeRemaining)}
-                </span>
-              </div>
-
-              {/* Progress */}
-              <div className="flex items-center space-x-2">
-                <Progress value={progress} className="w-24" />
-                <span className="text-sm text-gray-600">
-                  {completedQuestions}/{questions.length}
-                </span>
-              </div>
-
-              {/* Tab Switch Counter - Only show if max tab switches is set */}
-              {maxTabSwitches > 0 && (
-                <div className="flex items-center space-x-2">
-                  <Badge variant={tabSwitchCount >= maxTabSwitches ? "destructive" : "outline"}>
-                    Tab Switches: {tabSwitchCount}/{maxTabSwitches}
-                  </Badge>
-                </div>
-              )}
-
-              {/* Save Status */}
-              {isSaving ? (
-                <div className="flex items-center space-x-2 text-orange-600">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
-                  <span className="text-sm">Saving...</span>
-                </div>
-              ) : lastSaved ? (
-                <div className="flex items-center space-x-2 text-green-600">
-                  <CheckCircle className="h-4 w-4" />
-                  <span className="text-sm">Saved</span>
-                </div>
-              ) : null}
-
-              {/* Action Buttons */}
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={saveProgress}
-                  disabled={isSaving}
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Save
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowSubmitDialog(true)}
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Submit
-                </Button>
-                
-
-                
-
+              <div className="text-sm text-gray-600">
+                Question {currentQuestionIndex + 1} of {questions.length}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content - Full Screen layout */}
-      <div className="w-full h-full">
-        {/* Mobile Sidebar Overlay */}
-        {!isCodingQuestion && showSidebar && (
-          <div className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowSidebar(false)} />
-        )}
-        
-        <div className={`${isCodingQuestion ? 'w-full h-full' : 'grid gap-6 grid-cols-1 lg:grid-cols-5'}`}>
-          {/* Question Navigation Sidebar - Hidden for coding questions */}
-          {!isCodingQuestion && (
-            <div className={`lg:col-span-1 ${showSidebar ? 'block' : 'hidden lg:block'} lg:relative ${showSidebar ? 'fixed lg:static inset-y-0 left-0 z-50 w-80 lg:w-auto bg-white lg:bg-transparent border-r lg:border-r-0' : ''}`}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Main Content */}
+          <div className="lg:col-span-3">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center space-x-2">
-                    <List className="h-5 w-5" />
-                    <span>Questions</span>
+                  <CardTitle className="text-lg">
+                    Question {currentQuestionIndex + 1}
                   </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowSidebar(false)}
-                    className="lg:hidden"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Improved question grid layout */}
-                <div className="grid grid-cols-4 gap-2">
-                  {questions.map((question, index) => {
-                    const isAnswered = answers[question.id];
-                    const isCurrent = index === currentQuestionIndex;
-                    
-                    // For coding questions, check if all test cases passed
-                    const isCodingQuestion = question.question_type === 'coding';
-                    const isCodingComplete = isCodingQuestion && isAnswered && 
-                      answers[question.id]?.testResults && 
-                      answers[question.id]?.testResults.length > 0 &&
-                      answers[question.id]?.testResults.every(result => 
-                        result.result?.verdict?.status === 'accepted'
-                      );
-                    
-                    // For non-coding questions, just check if answered
-                    // For coding questions, only show complete if all test cases passed
-                    // This ensures students must pass all test cases to mark coding questions as complete
-                    const isQuestionComplete = isCodingQuestion ? isCodingComplete : isAnswered;
-                    
-                    return (
-                      <Button
-                        key={index}
-                        variant={isCurrent ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => handleQuestionNavigation(index)}
-                        className={`h-12 w-12 p-0 relative ${
-                          isQuestionComplete ? 'bg-green-100 border-green-300' : ''
-                        }`}
-                      >
-                        <span className="text-sm font-medium">{index + 1}</span>
-                        {isQuestionComplete && (
-                          <CheckCircle className="absolute -top-1 -right-1 h-3 w-3 text-green-600" />
-                        )}
-                      </Button>
-                    );
-                  })}
-                </div>
-                
-                {/* Progress summary */}
-                <div className="mt-4 pt-4 border-t">
-                  <div className="text-sm text-gray-600 mb-2">Progress Summary:</div>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between">
-                      <span>Completed:</span>
-                      <span className="font-medium text-green-600">{completedQuestions}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Remaining:</span>
-                      <span className="font-medium text-orange-600">{questions.length - completedQuestions}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Progress:</span>
-                      <span className="font-medium">{Math.round(progress)}%</span>
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => flagQuestion(currentQuestion?.id)}
+                      aria-label={flaggedQuestions.has(currentQuestion?.id) ? 'Unflag question' : 'Flag question for review'}
+                      aria-pressed={flaggedQuestions.has(currentQuestion?.id)}
+                    >
+                      <Flag className="h-4 w-4 mr-1" aria-hidden="true" />
+                      Flag
+                    </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+                
+                <Progress 
+                  value={getProgressPercentage()} 
+                  className="mt-4"
+                  role="progressbar"
+                  aria-valuenow={getProgressPercentage()}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Progress: ${Math.round(getProgressPercentage())}% complete`}
+                />
+              </CardHeader>
 
-            {/* Enhanced Proctor Monitoring - Show if any proctoring features are enabled */}
-            {isStarted && assessment.proctoring_settings && hasProctoringFeatures && (
-              <Card className="mt-4">
-                <CardHeader>
-                  <CardTitle className="text-lg">Proctor Monitoring</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <EnhancedProctorMonitoring
-                    settings={assessment.proctoring_settings}
-                    onViolation={handleProctorViolation}
-                    onStatusChange={setProctorStatus}
-                    onTerminate={handleAssessmentTermination}
-                    isFullscreen={isFullscreen}
-                    timeRemaining={timeRemaining}
-                  />
-                </CardContent>
-              </Card>
-            )}
-            </div>
-          )}
-
-          {/* Question Content - Maximized for screen usage */}
-          <div className={`${isCodingQuestion ? 'w-full h-full' : 'lg:col-span-4'} ${!showSidebar ? 'lg:col-span-full' : ''}`}>
-            {currentQuestion && (
-              <div className="h-full">
-                {isCodingQuestion ? (
-                  <CodingQuestionRenderer
-                    question={currentQuestion}
-                    answer={answers[currentQuestion.id]}
-                    onAnswerChange={(answer) => handleAnswerChange(currentQuestion.id, answer)}
-                    isReadOnly={isSubmitted}
-                    showCorrectAnswer={false}
-                    questions={questions}
-                    currentQuestionIndex={currentQuestionIndex}
-                    onQuestionChange={handleQuestionNavigation}
-                    onSave={saveProgress}
-                    lastSaved={lastSaved}
-                    isSaving={isSaving}
-                    clearStoredData={isRetakeAttempt}
-                  />
-                ) : (
+              <CardContent>
+                {currentQuestion && (
                   <QuestionRenderer
                     question={currentQuestion}
                     answer={answers[currentQuestion.id]}
                     onAnswerChange={(answer) => handleAnswerChange(currentQuestion.id, answer)}
-                    isReadOnly={isSubmitted}
-                    showCorrectAnswer={false}
+                    onSave={() => saveAnswer(currentQuestion.id, answers[currentQuestion.id], true)}
                   />
                 )}
-              </div>
-            )}
+              </CardContent>
+            </Card>
 
-            {/* Navigation Buttons - Only show for non-coding questions */}
-            {!isCodingQuestion && (
-              <div className="flex justify-between mt-6">
+            {/* Navigation */}
+            <div className="flex items-center justify-between mt-6">
+              <Button
+                variant="outline"
+                onClick={goToPrevious}
+                disabled={currentQuestionIndex === 0}
+                aria-label="Previous question"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
+                Previous
+              </Button>
+
+              <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
-                  onClick={handlePreviousQuestion}
-                  disabled={currentQuestionIndex === 0}
+                  onClick={() => setShowSubmissionModal(true)}
+                  title="Review all answers before submission"
+                  aria-label="Review all answers before submission"
                 >
-                  <ChevronLeft className="h-4 w-4 mr-2" />
-                  Previous
+                  <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Review Answers
                 </Button>
 
                 <Button
-                  onClick={handleNextQuestion}
-                  disabled={currentQuestionIndex === questions.length - 1}
+                  variant="outline"
+                  onClick={() => saveAnswer(currentQuestion?.id, answers[currentQuestion?.id], true)}
+                  disabled={!answers[currentQuestion?.id]}
+                  aria-label="Save current answer"
                 >
-                  Next
-                  <ChevronRight className="h-4 w-4 ml-2" />
+                  <Save className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Save Answer
+                </Button>
+
+                <Button
+                  onClick={() => setShowSubmissionModal(true)}
+                  className="bg-green-600 hover:bg-green-700"
+                  aria-label="Submit assessment"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Submit Assessment
                 </Button>
               </div>
-            )}
+
+              <Button
+                variant="outline"
+                onClick={goToNext}
+                disabled={currentQuestionIndex === questions.length - 1}
+                aria-label="Next question"
+              >
+                Next
+                <ArrowRight className="h-4 w-4 ml-2" aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="lg:col-span-1">
+            <NavigationPanel
+              questions={questions}
+              currentIndex={currentQuestionIndex}
+              answers={answers}
+              onNavigate={navigateToQuestion}
+              onFlag={flagQuestion}
+            />
+
+            {/* Assessment Info */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="text-sm">Assessment Info</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Total Questions:</span>
+                  <span>{questions.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Answered:</span>
+                  <span>{getAnsweredCount()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Flagged:</span>
+                  <span>{getFlaggedCount()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Points:</span>
+                  <span>{assessment.total_points}</span>
+                </div>
+                {proctoringEnabled && (
+                  <div className="flex items-center text-orange-600">
+                    <Eye className="h-4 w-4 mr-1" />
+                    <span>Proctored</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
 
-      {/* Submit Dialog */}
-      <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Submit Assessment</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to submit your assessment? You cannot change your answers after submission.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="text-sm">
-              <div className="flex justify-between">
-                <span>Questions Completed:</span>
-                <span>{completedQuestions}/{questions.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Time Remaining:</span>
-                <span>{formatTime(timeRemaining)}</span>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmitAssessment}>
-              Submit Assessment
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Fullscreen Dialog */}
-      <Dialog open={showFullscreenDialog} onOpenChange={() => {}}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Maximize className="h-5 w-5 text-orange-600" />
-              <span>Fullscreen Mode Required</span>
-            </DialogTitle>
-            <DialogDescription>
-              This assessment requires fullscreen mode to ensure academic integrity. Please return to fullscreen mode to continue.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                You have exited fullscreen mode. The assessment cannot continue until you return to fullscreen mode.
-              </AlertDescription>
-            </Alert>
-          </div>
-          <DialogFooter>
-            <Button 
-              onClick={async () => {
-                try {
-                  await requestFullscreen();
-                  setShowFullscreenDialog(false);
-                } catch (error) {
-                  toast({
-                    variant: "destructive",
-                    title: "Fullscreen Failed",
-                    description: "Please manually enter fullscreen mode (F11) to continue the assessment."
-                  });
-                }
-              }}
-              className="w-full"
-            >
-              <Maximize className="h-4 w-4 mr-2" />
-              Return to Fullscreen Mode
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Submission Modal */}
+      <SubmissionModal
+        isOpen={showSubmissionModal}
+        onClose={() => setShowSubmissionModal(false)}
+        onSubmit={handleSubmitAssessment}
+        assessment={assessment}
+        answers={answers}
+        questions={questions}
+        flaggedQuestions={flaggedQuestions}
+        loading={saving}
+      />
     </div>
   );
 };
 
-export default StudentAssessmentTakingPage; 
+export default StudentAssessmentTakingPage;

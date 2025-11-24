@@ -182,6 +182,17 @@ class Judge0Service {
   // Execute code with input and expected output
   async executeCode(sourceCode, language, input = '', expectedOutput = '') {
     try {
+      // MEDIUM FIX: Health check before execution, fallback to Docker if unavailable
+      const healthStatus = await this.healthCheck();
+      if (!healthStatus.success) {
+        console.warn('Judge0 service unavailable, should fallback to Docker service');
+        return {
+          success: false,
+          error: 'Judge0 service is unavailable. Please use Docker service as fallback.',
+          shouldFallback: true
+        };
+      }
+      
       // Create submission
       const submissionResult = await this.createSubmission(sourceCode, language, input, expectedOutput);
       

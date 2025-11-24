@@ -108,9 +108,9 @@ const CodeEditor = ({
   };
 
   return (
-    <div className="code-editor-container" {...props}>
+    <div className="code-editor-container w-full h-full" style={{ height: height === '100%' ? '100%' : height, width: width }} {...props}>
       <Editor
-        height={height}
+        height={height === '100%' ? '100%' : height}
         width={width}
         language={normalizedLanguage}
         theme={theme}
@@ -120,6 +120,7 @@ const CodeEditor = ({
         options={{
           ...getLanguageConfig(normalizedLanguage),
           readOnly,
+          automaticLayout: true,
           ...options
         }}
         loading={

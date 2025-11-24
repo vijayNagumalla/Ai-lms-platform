@@ -33,7 +33,7 @@ const SaveViewPanel = ({ onSave, onClose, savedViews, onLoadView }) => {
 
   const handleDeleteView = async (viewId) => {
     // This would typically call an API to delete the view
-    console.log('Delete view:', viewId);
+    // console.log('Delete view:', viewId);
   };
 
   const getModuleIcon = (module) => {

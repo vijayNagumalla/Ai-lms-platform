@@ -78,7 +78,7 @@ const ExportPanel = ({ module, filters, onExport, loading }) => {
       };
       setRecentExports(prev => [newExport, ...prev.slice(0, 4)]);
       
-      setTimeout(() => setExportProgress(0), 2000);
+      setTimeout(() => setExportProgress(0), 1000); // Reduced from 2000ms
     } catch (error) {
       setExportProgress(0);
     }

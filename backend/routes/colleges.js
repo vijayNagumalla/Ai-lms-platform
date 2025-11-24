@@ -1,6 +1,7 @@
 import express from 'express';
 import * as collegeController from '../controllers/collegeController.js';
 import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import { validateCSRFToken } from '../middleware/csrf.js';
 
 const router = express.Router();
 
@@ -17,19 +18,19 @@ router.get('/locations', authenticateToken, authorizeRoles('super-admin'), colle
 router.get('/:collegeId', authenticateToken, authorizeRoles('super-admin', 'college-admin'), collegeController.getCollegeById);
 
 // Create new college
-router.post('/', authenticateToken, authorizeRoles('super-admin'), collegeController.createCollege);
+router.post('/', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.createCollege);
 
 // Update college
-router.put('/:collegeId', authenticateToken, authorizeRoles('super-admin'), collegeController.updateCollege);
+router.put('/:collegeId', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.updateCollege);
 
 // Delete college (HARD DELETE by default - removes data from database)
-router.delete('/:collegeId', authenticateToken, authorizeRoles('super-admin'), collegeController.deleteCollege);
+router.delete('/:collegeId', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.deleteCollege);
 
 // Soft delete college (mark as inactive but keep data)
-router.delete('/:collegeId/soft', authenticateToken, authorizeRoles('super-admin'), collegeController.softDeleteCollege);
+router.delete('/:collegeId/soft', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.softDeleteCollege);
 
 // Restore deleted college
-router.patch('/:collegeId/restore', authenticateToken, authorizeRoles('super-admin'), collegeController.restoreCollege);
+router.patch('/:collegeId/restore', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.restoreCollege);
 
 // Get deleted colleges
 router.get('/deleted/list', authenticateToken, authorizeRoles('super-admin'), collegeController.getDeletedColleges);
@@ -44,11 +45,15 @@ router.get('/:collegeId/stats', authenticateToken, authorizeRoles('super-admin',
 // Get departments for a specific college
 router.get('/:collegeId/departments', authenticateToken, authorizeRoles('super-admin', 'college-admin'), collegeController.getCollegeDepartments);
 
+// Batch routes
+// Get batches for a specific college
+router.get('/:collegeId/batches', authenticateToken, authorizeRoles('super-admin', 'college-admin'), collegeController.getCollegeBatches);
+
 // Get departments for multiple colleges
-router.post('/departments/batch', authenticateToken, authorizeRoles('super-admin'), collegeController.getDepartmentsForColleges);
+router.post('/departments/batch', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.getDepartmentsForColleges);
 
 // Get batches for multiple colleges
-router.post('/batches/batch', authenticateToken, authorizeRoles('super-admin'), collegeController.getBatchesForColleges);
+router.post('/batches/batch', authenticateToken, authorizeRoles('super-admin'), validateCSRFToken, collegeController.getBatchesForColleges);
 
 // Get common departments for dropdown
 router.get('/departments/common', authenticateToken, authorizeRoles('super-admin'), collegeController.getCommonDepartments);

@@ -89,14 +89,8 @@ const AnalyticsDashboard = () => {
         }));
       }
 
-      // Load assessment types
-      const typesResponse = await apiService.getAssessmentTypes();
-      if (typesResponse.success) {
-        setFilterOptions(prev => ({
-          ...prev,
-          assessmentTypes: typesResponse.data
-        }));
-      }
+      // Assessment types endpoint removed - filter no longer exists in backend
+      // No need to load assessment types as this feature was removed
     } catch (error) {
       // Error loading filter options
     }
@@ -145,7 +139,7 @@ const AnalyticsDashboard = () => {
     
     // TODO: Implement actual response viewing functionality
     // This could open a modal showing the student's answers, or navigate to a detailed view
-    console.log('Viewing student response:', submission);
+    // console.log('Viewing student response:', submission);
   };
 
   const handleViewAssessmentDetails = async (assessment) => {

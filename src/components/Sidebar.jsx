@@ -15,8 +15,13 @@ import {
   Building,
   Users,
   FileText,
-  Code,
-  BarChart3
+  BarChart3,
+  UserCheck,
+  Calendar,
+  GraduationCap,
+  Shield,
+  ChevronDown,
+  FolderKanban
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { useTheme } from '@/components/ThemeProvider';
@@ -64,6 +69,30 @@ const Sidebar = ({ onMobileClose }) => {
     if (path === '/admin/users') {
       return location.pathname.startsWith('/admin/users');
     }
+    if (path === '/dashboard/super-admin/courses') {
+      return location.pathname.startsWith('/dashboard/super-admin/courses');
+    }
+    if (path === '/dashboard/super-admin/attendance') {
+      return location.pathname.startsWith('/dashboard/super-admin/attendance');
+    }
+    if (path === '/dashboard/super-admin/scheduling') {
+      return location.pathname.startsWith('/dashboard/super-admin/scheduling');
+    }
+    if (path === '/dashboard/super-admin/faculty-status') {
+      return location.pathname.startsWith('/dashboard/super-admin/faculty-status');
+    }
+    if (path === '/dashboard/super-admin/project-management') {
+      return location.pathname.startsWith('/dashboard/super-admin/project-management');
+    }
+    if (path === '/dashboard/college-admin/project-management') {
+      return location.pathname.startsWith('/dashboard/college-admin/project-management');
+    }
+    if (path === '/dashboard/faculty/project-management') {
+      return location.pathname.startsWith('/dashboard/faculty/project-management');
+    }
+    if (path === '/dashboard/student/project-management') {
+      return location.pathname.startsWith('/dashboard/student/project-management');
+    }
     if (path === '/analytics/dashboard') {
       return location.pathname.startsWith('/analytics');
     }
@@ -107,10 +136,10 @@ const Sidebar = ({ onMobileClose }) => {
       roles: ['super-admin']
     },
     {
-      title: "Courses",
-      href: "/courses",
+      title: "Course Management",
+      href: "/dashboard/super-admin/courses",
       icon: BookMarked,
-      roles: ['college-admin', 'faculty']
+      roles: ['super-admin']
     },
     {
       title: "Assessments",
@@ -135,6 +164,52 @@ const Sidebar = ({ onMobileClose }) => {
       href: "/profile",
       icon: User,
       roles: ['super-admin', 'college-admin', 'faculty', 'student']
+    },
+    {
+      title: "Project Management",
+      href: "/dashboard/college-admin/project-management",
+      icon: FolderKanban,
+      roles: ['college-admin']
+    },
+    {
+      title: "Project Management",
+      href: "/dashboard/faculty/project-management",
+      icon: FolderKanban,
+      roles: ['faculty']
+    },
+    {
+      title: "Project Management",
+      href: "/dashboard/student/project-management",
+      icon: FolderKanban,
+      roles: ['student']
+    }
+  ];
+
+  // Administration submenu items
+  const administrationItems = [
+    {
+      title: "Project Management",
+      href: "/dashboard/super-admin/project-management",
+      icon: FolderKanban,
+      roles: ['super-admin']
+    },
+    {
+      title: "Attendance",
+      href: "/dashboard/super-admin/attendance",
+      icon: UserCheck,
+      roles: ['super-admin']
+    },
+    {
+      title: "Class Scheduling",
+      href: "/dashboard/super-admin/scheduling",
+      icon: Calendar,
+      roles: ['super-admin']
+    },
+    {
+      title: "Faculty Status",
+      href: "/dashboard/super-admin/faculty-status",
+      icon: GraduationCap,
+      roles: ['super-admin']
     }
   ];
 
@@ -142,10 +217,14 @@ const Sidebar = ({ onMobileClose }) => {
     item.roles.includes(user?.role)
   );
 
+  const filteredAdministrationItems = administrationItems.filter(item => 
+    item.roles.includes(user?.role)
+  );
+
   return (
     <div className="fixed left-0 top-0 h-full w-64 bg-background border-r border-border flex flex-col z-40">
       {/* Header */}
-      <div className="flex h-20 items-center justify-between border-b px-6">
+      <div className="flex h-20 items-center justify-between border-b px-6 flex-shrink-0">
         <Link to="/" className="flex items-center space-x-3" onClick={onMobileClose}>
           <BookOpenText className="h-7 w-7 text-primary" />
           <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-pink-500">
@@ -165,15 +244,28 @@ const Sidebar = ({ onMobileClose }) => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-3 p-6 overflow-y-auto">
+      <nav className="flex-1 space-y-3 p-6 overflow-y-auto min-h-0">
         {filteredNavigationItems.map((item) => {
           const IconComponent = item.icon;
-          const href = item.title === "Assessments" && user?.role === 'student' 
-            ? "/student/assessments" 
-            : item.href;
+          let href = item.href;
+          
+          // Handle role-specific routes
+          if (item.title === "Assessments" && user?.role === 'student') {
+            href = "/student/assessments";
+          } else if (item.title === "Project Management") {
+            // Set href based on user role
+            if (user?.role === 'college-admin') {
+              href = "/dashboard/college-admin/project-management";
+            } else if (user?.role === 'faculty') {
+              href = "/dashboard/faculty/project-management";
+            } else if (user?.role === 'student') {
+              href = "/dashboard/student/project-management";
+            }
+          }
+          
           return (
             <Link
-              key={item.href}
+              key={`${item.href}-${item.roles.join('-')}`}
               to={href}
               className={getLinkClasses(href)}
               {...getAriaAttributes(href)}
@@ -184,10 +276,37 @@ const Sidebar = ({ onMobileClose }) => {
             </Link>
           );
         })}
+
+        {/* Administration Section - Only show if user has access to any admin items */}
+        {filteredAdministrationItems.length > 0 && (
+          <>
+            <div className="pt-4 pb-2">
+              <div className="flex items-center gap-2 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Shield className="h-4 w-4" />
+                <span>Administration</span>
+              </div>
+            </div>
+            {filteredAdministrationItems.map((item) => {
+              const IconComponent = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={getLinkClasses(item.href)}
+                  {...getAriaAttributes(item.href)}
+                  onClick={onMobileClose}
+                >
+                  <IconComponent className="h-5 w-5 flex-shrink-0" />
+                  <span className="truncate">{item.title}</span>
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* Footer */}
-      <div className="border-t p-6 space-y-3">
+      <div className="border-t p-6 space-y-3 flex-shrink-0">
         {/* Theme Toggle */}
         <Button
           variant="ghost"

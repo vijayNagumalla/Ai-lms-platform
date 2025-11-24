@@ -1,0 +1,102 @@
+/* High Contrast Mode Styles */
+.high-contrast {
+  --hc-bg: #ffffff;
+  --hc-text: #000000;
+  --hc-border: #000000;
+  --hc-primary: #0000ff;
+  --hc-focus: #ff0000;
+  --hc-error: #ff0000;
+  --hc-success: #008000;
+  --hc-warning: #ff8c00;
+}
+
+.high-contrast body,
+.high-contrast {
+  background-color: var(--hc-bg) !important;
+  color: var(--hc-text) !important;
+}
+
+.high-contrast * {
+  border-color: var(--hc-border) !important;
+}
+
+.high-contrast button,
+.high-contrast .btn {
+  border: 2px solid var(--hc-border) !important;
+  background-color: var(--hc-bg) !important;
+  color: var(--hc-text) !important;
+}
+
+.high-contrast button:hover,
+.high-contrast .btn:hover {
+  background-color: var(--hc-primary) !important;
+  color: var(--hc-bg) !important;
+  border-color: var(--hc-primary) !important;
+}
+
+.high-contrast input,
+.high-contrast textarea,
+.high-contrast select {
+  border: 2px solid var(--hc-border) !important;
+  background-color: var(--hc-bg) !important;
+  color: var(--hc-text) !important;
+}
+
+.high-contrast input:focus,
+.high-contrast textarea:focus,
+.high-contrast select:focus {
+  outline: 3px solid var(--hc-focus) !important;
+  outline-offset: 2px !important;
+  border-color: var(--hc-focus) !important;
+}
+
+.high-contrast a {
+  color: var(--hc-primary) !important;
+  text-decoration: underline !important;
+}
+
+.high-contrast a:focus {
+  outline: 3px solid var(--hc-focus) !important;
+  outline-offset: 2px !important;
+}
+
+.high-contrast .text-red-600,
+.high-contrast .text-red-500,
+.high-contrast .text-error {
+  color: var(--hc-error) !important;
+}
+
+.high-contrast .text-green-600,
+.high-contrast .text-green-500,
+.high-contrast .text-success {
+  color: var(--hc-success) !important;
+}
+
+.high-contrast .text-yellow-600,
+.high-contrast .text-yellow-500,
+.high-contrast .text-warning {
+  color: var(--hc-warning) !important;
+}
+
+.high-contrast [role="button"]:focus,
+.high-contrast button:focus,
+.high-contrast input:focus,
+.high-contrast textarea:focus,
+.high-contrast select:focus {
+  outline: 3px solid var(--hc-focus) !important;
+  outline-offset: 2px !important;
+}
+
+/* Ensure sufficient contrast for all text */
+.high-contrast .text-gray-600,
+.high-contrast .text-gray-500,
+.high-contrast .text-gray-400 {
+  color: var(--hc-text) !important;
+}
+
+.high-contrast .bg-gray-100,
+.high-contrast .bg-gray-200 {
+  background-color: var(--hc-bg) !important;
+  border: 1px solid var(--hc-border) !important;
+}
+

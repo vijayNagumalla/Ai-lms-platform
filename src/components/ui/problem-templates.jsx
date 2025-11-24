@@ -51,7 +51,7 @@ rl.on('line', (line) => {
     if (lines.length === 2) {
         const a = parseInt(lines[0]);
         const b = parseInt(lines[1]);
-        console.log(a + b);
+        // console.log(a + b);
         rl.close();
     }
 });`,

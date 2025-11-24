@@ -1,0 +1,74 @@
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\analyticsController.js[24m[0m
+[0m  [2m156:9[22m   [31merror[39m  'departmentFilter' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m165:9[22m   [31merror[39m  'studentFilter' is assigned a value but never used     [2mno-unused-vars[22m[0m
+[0m  [2m789:38[22m  [31merror[39m  'filters' is not defined                               [2mno-undef[22m[0m
+[0m  [2m797:9[22m   [31merror[39m  'filters' is not defined                               [2mno-undef[22m[0m
+[0m  [2m922:21[22m  [31merror[39m  'filters' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\assessmentController.js[24m[0m
+[0m     [2m3:8[22m   [31merror[39m    'jwt' is defined but never used                           [2mno-unused-vars[22m[0m
+[0m     [2m6:8[22m   [31merror[39m    'dockerCodeService' is defined but never used             [2mno-unused-vars[22m[0m
+[0m   [2m463:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m468:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m468:53[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m471:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m472:19[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m473:19[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m474:17[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m475:17[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m476:17[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m477:27[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m478:32[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m481:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m481:48[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m482:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m482:53[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m483:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m483:42[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m484:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m484:38[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m485:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m485:42[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m489:9[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m489:46[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m490:7[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m496:5[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m499:9[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m499:46[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m500:7[22m   [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m516:13[22m  [31merror[39m    'assessment' is not defined                               [2mno-undef[22m[0m
+[0m   [2m730:15[22m  [31merror[39m    'updateResult' is assigned a value but never used         [2mno-unused-vars[22m[0m
+[0m   [2m744:16[22m  [31merror[39m    'updatedAssignments' is assigned a value but never used   [2mno-unused-vars[22m[0m
+[0m   [2m985:7[22m   [31merror[39m    'section_id' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m   [2m988:7[22m   [31merror[39m    'time_limit_seconds' is assigned a value but never used   [2mno-unused-vars[22m[0m
+[0m  [2m1379:7[22m   [31merror[39m    'tags' is assigned a value but never used                 [2mno-unused-vars[22m[0m
+[0m  [2m1494:25[22m  [31merror[39m    'result' is not defined                                   [2mno-undef[22m[0m
+[0m  [2m1597:7[22m   [33mwarning[39m  Expected a default case                                   [2mdefault-case[22m[0m
+[0m  [2m2520:11[22m  [31merror[39m    'currentAttemptCount' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m2522:11[22m  [31merror[39m    'nextAttemptNumber' is assigned a value but never used    [2mno-unused-vars[22m[0m
+[0m  [2m2823:11[22m  [31merror[39m    'now' is assigned a value but never used                  [2mno-unused-vars[22m[0m
+[0m  [2m2871:53[22m  [31merror[39m    'started_at' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m  [2m2871:80[22m  [31merror[39m    'answers' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m4024:11[22m  [31merror[39m    'result' is assigned a value but never used               [2mno-unused-vars[22m[0m
+[0m  [2m4057:17[22m  [31merror[39m    'current_user_id' is assigned a value but never used      [2mno-unused-vars[22m[0m
+[0m  [2m4165:11[22m  [31merror[39m    'assessment' is assigned a value but never used           [2mno-unused-vars[22m[0m
+[0m  [2m4324:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used         [2mno-unused-vars[22m[0m
+[0m  [2m4333:13[22m  [31merror[39m    'reminderDate' is assigned a value but never used         [2mno-unused-vars[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\bulkUploadController.js[24m[0m
+[0m  [2m442:9[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m443:13[22m  [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m  [2m444:7[22m   [31merror[39m  'connection' is not defined  [2mno-undef[22m[0m
+[0m[0m
+[0m[4mC:\Users\vijay\OneDrive\Desktop\AI LMS PLATFORM\backend\controllers\questionBankController.js[24m[0m
+[0m   [2m547:5[22m  [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m1037:7[22m  [31merror[39m    'acceptable_answers' is assigned a value but never used  [2mno-unused-vars[22m[0m
+[0m  [2m1038:7[22m  [31merror[39m    'rubric' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1040:7[22m  [31merror[39m    'blanks' is assigned a value but never used              [2mno-unused-vars[22m[0m
+[0m  [2m1653:5[22m  [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m1852:9[22m  [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m  [2m2245:9[22m  [33mwarning[39m  Expected a default case                                  [2mdefault-case[22m[0m
+[0m[0m
+[0m[31m[1m✖ 63 problems (58 errors, 5 warnings)[22m[39m[0m
+[0m[31m[1m[22m[39m[0m

@@ -573,32 +573,9 @@ export default function ProctoringStep({ formData, updateFormData }) {
         )}
       </div>
 
-      {/* Information about proctoring types */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-gray-800 mb-2">Proctoring Types Explained</h3>
-        <div className="text-sm text-gray-600 space-y-2">
-          <p><strong>None:</strong> No proctoring features enabled</p>
-          <p><strong>Basic:</strong> Browser lockdown, tab switching detection, copy/paste prevention, right-click blocking, fullscreen requirement, and keyboard shortcut detection</p>
-          <p><strong>Advanced:</strong> All basic features plus webcam/microphone monitoring, screen sharing detection, multiple device detection, face detection, voice detection, background noise detection, eye tracking, and plagiarism detection</p>
-          <p><strong>AI Proctoring:</strong> All advanced features plus AI-powered behavioral analysis, facial recognition, emotion detection, attention monitoring, suspicious activity detection, AI-powered plagiarism detection, voice analysis, gesture recognition, and real-time AI alerts</p>
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
-            <p className="text-xs text-blue-800 font-medium">Note: Higher-level proctoring types automatically include all features from lower levels. Required features are disabled and cannot be unchecked.</p>
-          </div>
-        </div>
-      </div>
+      
 
-      {/* Warning about proctoring requirements */}
-      {formData.require_proctoring && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-yellow-800 mb-2">Important Notes</h3>
-          <div className="text-sm text-yellow-700 space-y-1">
-            <p>• Students will be notified about proctoring requirements before starting the assessment</p>
-            <p>• Students must grant necessary permissions for proctoring features to work</p>
-            <p>• Proctoring data will be stored securely and only accessible to authorized personnel</p>
-            <p>• Students can contact support if they experience technical issues with proctoring</p>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 } 

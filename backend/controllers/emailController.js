@@ -19,7 +19,6 @@ export const checkEmailConfiguration = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error checking email configuration:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to check email configuration'
@@ -71,7 +70,6 @@ export const testEmailService = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error testing email service:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to test email service'

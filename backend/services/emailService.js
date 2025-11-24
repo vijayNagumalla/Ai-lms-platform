@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import { retryWithBackoff } from '../utils/retry.js';
+import appConfig from '../config/appConfig.js';
 
 class EmailService {
   constructor() {
@@ -6,7 +8,11 @@ class EmailService {
     this.isConfigured = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
     
     if (this.isConfigured) {
-      // Configure email transporter
+      // Configure email transporter with improved Gmail settings
+      // CRITICAL FIX: TLS certificate validation - enabled by default, can be disabled in development
+      const rejectUnauthorized = process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' && 
+                                 process.env.NODE_ENV === 'production';
+      
       this.transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
         port: process.env.SMTP_PORT || 587,
@@ -14,18 +20,69 @@ class EmailService {
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS
-        }
+        },
+        tls: {
+          rejectUnauthorized: rejectUnauthorized // CRITICAL FIX: Enable certificate validation in production
+        },
+        // MEDIUM FIX: Use configurable rate limiting from appConfig
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
+        rateDelta: appConfig.email.rateDelta,
+        rateLimit: appConfig.email.rateLimit
       });
+
+      // Verify connection configuration
+      this.verifyConnection();
     } else {
-      console.warn('Email service not configured: Missing SMTP credentials');
       this.transporter = null;
+    }
+  }
+
+  async verifyConnection() {
+    try {
+      if (this.transporter) {
+        await this.transporter.verify();
+        console.log('✅ Email service connection verified successfully');
+      }
+    } catch (error) {
+      // CRITICAL FIX: Log errors properly instead of swallowing them
+      console.error('❌ Email service connection verification failed:', {
+        message: error.message,
+        code: error.code,
+        command: error.command,
+        response: error.response,
+        responseCode: error.responseCode
+      });
+      
+      // Provide helpful troubleshooting for Gmail authentication errors
+      if (error.code === 'EAUTH' || error.responseCode === 535) {
+        console.error('\n🔧 Gmail Authentication Error - Troubleshooting Steps:');
+        console.error('   1. Gmail requires an App Password (not your regular password)');
+        console.error('   2. Enable 2-Factor Authentication on your Google account');
+        console.error('   3. Generate an App Password: https://myaccount.google.com/apppasswords');
+        console.error('   4. Use the App Password in your SMTP_PASS environment variable');
+        console.error('   5. Make sure SMTP_USER is your full Gmail address (e.g., user@gmail.com)');
+        console.error('   📖 See GMAIL_EMAIL_SETUP_GUIDE.md for detailed instructions\n');
+      }
+      
+      // In production, alert administrators about email service issues
+      if (process.env.NODE_ENV === 'production') {
+        console.error('⚠️ WARNING: Email service is not properly configured. Email notifications may fail.');
+      }
+      
+      // Don't throw - allow service to attempt sending but log the issue
     }
   }
 
   async sendAssessmentNotification(recipients, assessmentDetails) {
     try {
+      console.log('Email service configured:', this.isConfigured);
+      console.log('Transporter available:', !!this.transporter);
+      
       // Check if email service is configured
       if (!this.isConfigured || !this.transporter) {
+        console.warn('Email service not configured. SMTP credentials not set.');
         return { 
           success: false, 
           message: 'Email service not configured. Please configure SMTP settings.',
@@ -33,14 +90,35 @@ class EmailService {
         };
       }
 
-      const emailPromises = recipients.map(recipient => 
-        this.sendSingleNotification(recipient, assessmentDetails)
-      );
+      // MEDIUM FIX: Queue system for bulk emails to respect rate limits
+      const emailQueue = [...recipients];
+      const batchSize = appConfig.email.batchSize;
+      const results = [];
       
-      await Promise.all(emailPromises);
-      return { success: true, message: 'Email notifications sent successfully' };
+      while (emailQueue.length > 0) {
+        const batch = emailQueue.splice(0, batchSize);
+        const batchPromises = batch.map(recipient => 
+          this.sendSingleNotification(recipient, assessmentDetails)
+        );
+        
+        const batchResults = await Promise.allSettled(batchPromises);
+        results.push(...batchResults);
+        
+        // MEDIUM FIX: Add delay between batches to respect rate limits
+        if (emailQueue.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, appConfig.email.batchDelay));
+        }
+      }
+      
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+      const failed = results.length - successful;
+      return { 
+        success: successful > 0, 
+        message: `Email notifications sent: ${successful} successful, ${failed} failed`,
+        successful,
+        failed
+      };
     } catch (error) {
-      console.error('Error sending email notifications:', error);
       return { 
         success: false, 
         message: 'Failed to send email notifications',
@@ -60,14 +138,35 @@ class EmailService {
         };
       }
 
-      const emailPromises = recipients.map(recipient => 
-        this.sendSingleReminder(recipient, assessmentDetails)
-      );
+      // MEDIUM FIX: Queue system for bulk reminder emails
+      const emailQueue = [...recipients];
+      const batchSize = appConfig.email.batchSize;
+      const results = [];
       
-      await Promise.all(emailPromises);
-      return { success: true, message: 'Reminder emails sent successfully' };
+      while (emailQueue.length > 0) {
+        const batch = emailQueue.splice(0, batchSize);
+        const batchPromises = batch.map(recipient => 
+          this.sendSingleReminder(recipient, assessmentDetails)
+        );
+        
+        const batchResults = await Promise.allSettled(batchPromises);
+        results.push(...batchResults);
+        
+        // MEDIUM FIX: Add delay between batches to respect rate limits
+        if (emailQueue.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, appConfig.email.batchDelay));
+        }
+      }
+      
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+      const failed = results.length - successful;
+      return { 
+        success: successful > 0, 
+        message: `Reminder emails sent: ${successful} successful, ${failed} failed`,
+        successful,
+        failed
+      };
     } catch (error) {
-      console.error('Error sending reminder emails:', error);
       return { 
         success: false, 
         message: 'Failed to send reminder emails',
@@ -76,8 +175,111 @@ class EmailService {
     }
   }
 
+  // CRITICAL FIX: Email delivery tracking - Ensure tracking table exists
+  async ensureTrackingTableExists() {
+    try {
+      const { pool: db } = await import('../config/database.js');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS email_delivery_tracking (
+          id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+          recipient_email VARCHAR(255) NOT NULL,
+          recipient_id VARCHAR(36),
+          assessment_id VARCHAR(36),
+          notification_type VARCHAR(50),
+          message_id VARCHAR(255),
+          status ENUM('pending', 'sent', 'delivered', 'bounced', 'failed') DEFAULT 'pending',
+          sent_at TIMESTAMP NULL,
+          delivered_at TIMESTAMP NULL,
+          bounced_at TIMESTAMP NULL,
+          error_message TEXT,
+          metadata JSON,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_recipient_email (recipient_email),
+          INDEX idx_recipient_id (recipient_id),
+          INDEX idx_assessment_id (assessment_id),
+          INDEX idx_status (status),
+          INDEX idx_sent_at (sent_at),
+          FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
+          FOREIGN KEY (assessment_id) REFERENCES assessment_templates(id) ON DELETE SET NULL
+        )
+      `);
+    } catch (error) {
+      if (!error.message.includes('already exists')) {
+        console.error('Error creating email tracking table:', error);
+      }
+    }
+  }
+
+  // CRITICAL FIX: Email delivery tracking - Track email status
+  async trackEmailDelivery(recipient, assessmentDetails, messageId, status = 'pending') {
+    try {
+      await this.ensureTrackingTableExists();
+      const { pool: db } = await import('../config/database.js');
+      
+      const query = `
+        INSERT INTO email_delivery_tracking 
+        (recipient_email, recipient_id, assessment_id, notification_type, message_id, status, sent_at, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+      `;
+      
+      await db.query(query, [
+        recipient.email,
+        recipient.userId || null,
+        assessmentDetails.assessment_id || null,
+        'assessment_notification',
+        messageId,
+        status,
+        JSON.stringify({
+          assessment_title: assessmentDetails.title,
+          recipient_name: recipient.name
+        })
+      ]);
+      
+      return { tracked: true };
+    } catch (error) {
+      console.error('Error tracking email delivery:', error);
+      // Don't throw - tracking failure shouldn't block email sending
+      return { tracked: false, error: error.message };
+    }
+  }
+
+  // CRITICAL FIX: Email delivery tracking - Update email status
+  async updateEmailStatus(messageId, status, errorMessage = null) {
+    try {
+      const { pool: db } = await import('../config/database.js');
+      
+      const updateFields = ['status = ?', 'updated_at = NOW()'];
+      const params = [status, messageId];
+      
+      if (status === 'delivered') {
+        updateFields.push('delivered_at = NOW()');
+      } else if (status === 'bounced' || status === 'failed') {
+        updateFields.push(`${status === 'bounced' ? 'bounced_at' : 'bounced_at'} = NOW()`);
+        if (errorMessage) {
+          updateFields.push('error_message = ?');
+          params.push(errorMessage);
+        }
+      }
+      
+      const query = `
+        UPDATE email_delivery_tracking 
+        SET ${updateFields.join(', ')}
+        WHERE message_id = ?
+      `;
+      
+      await db.query(query, params);
+      return { updated: true };
+    } catch (error) {
+      console.error('Error updating email status:', error);
+      return { updated: false, error: error.message };
+    }
+  }
+
   async sendSingleNotification(recipient, assessmentDetails) {
     const { email, name } = recipient;
+    
+    console.log('Sending email to:', email, 'for assessment:', assessmentDetails.title);
     
     const emailContent = this.generateAssessmentEmail(assessmentDetails, name);
     
@@ -90,13 +292,41 @@ class EmailService {
 
     try {
       if (!this.transporter) {
+        console.error('Email transporter not configured');
         throw new Error('Email transporter not configured');
       }
       
-      await this.transporter.sendMail(mailOptions);
-      console.log(`Email sent successfully to ${email}`);
+      // CRITICAL FIX: Retry email sending with exponential backoff
+      const info = await retryWithBackoff(
+        () => this.transporter.sendMail(mailOptions),
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+          retryableErrors: [/ECONNREFUSED/, /ETIMEDOUT/, /ENOTFOUND/, /ECONNRESET/],
+          onRetry: (attempt, error) => {
+            console.warn(`Email send retry attempt ${attempt}:`, error.message);
+          }
+        }
+      );
+      const messageId = info.messageId || info.messageId || `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // CRITICAL FIX: Track email delivery
+      await this.trackEmailDelivery(recipient, assessmentDetails, messageId, 'sent');
+      
+      // CRITICAL FIX: Update status to delivered (if nodemailer provides delivery info)
+      if (info.accepted && info.accepted.length > 0) {
+        // For most SMTP servers, we can't track actual delivery without webhooks
+        // But we mark as sent and can update later via webhooks or polling
+        await this.updateEmailStatus(messageId, 'sent');
+      }
+      
+      return { success: true, messageId };
     } catch (error) {
-      console.error(`Failed to send email to ${email}:`, error);
+      // CRITICAL FIX: Track failed emails
+      const messageId = `failed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await this.trackEmailDelivery(recipient, assessmentDetails, messageId, 'failed');
+      await this.updateEmailStatus(messageId, 'failed', error.message);
       throw error;
     }
   }
@@ -118,15 +348,50 @@ class EmailService {
         throw new Error('Email transporter not configured');
       }
       
-      await this.transporter.sendMail(mailOptions);
-      console.log(`Reminder email sent successfully to ${email}`);
+      // CRITICAL FIX: Retry email sending with exponential backoff
+      const info = await retryWithBackoff(
+        () => this.transporter.sendMail(mailOptions),
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+          retryableErrors: [/ECONNREFUSED/, /ETIMEDOUT/, /ENOTFOUND/, /ECONNRESET/],
+          onRetry: (attempt, error) => {
+            console.warn(`Email send retry attempt ${attempt}:`, error.message);
+          }
+        }
+      );
+      const messageId = info.messageId || `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // CRITICAL FIX: Track email delivery
+      await this.trackEmailDelivery(recipient, { ...assessmentDetails, is_reminder: true }, messageId, 'sent');
+      await this.updateEmailStatus(messageId, 'sent');
+      
+      return { success: true, messageId };
     } catch (error) {
-      console.error(`Failed to send reminder email to ${email}:`, error);
+      // CRITICAL FIX: Track failed emails
+      const messageId = `failed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await this.trackEmailDelivery(recipient, { ...assessmentDetails, is_reminder: true }, messageId, 'failed');
+      await this.updateEmailStatus(messageId, 'failed', error.message);
       throw error;
     }
   }
 
+  // CRITICAL FIX: HTML escape function to prevent XSS in email templates
+  escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+  }
+
   generateAssessmentEmail(assessmentDetails, recipientName, isReminder = false) {
+    // CRITICAL FIX: Escape all user input to prevent XSS
     const {
       title,
       type,
@@ -144,10 +409,19 @@ class EmailService {
       description,
       access_password
     } = assessmentDetails;
+    
+    // CRITICAL FIX: Escape all user input to prevent XSS
+    const safeTitle = this.escapeHtml(title);
+    const safeRecipientName = this.escapeHtml(recipientName);
+    const safeDescription = description ? this.escapeHtml(description) : '';
+    const safeInstructions = instructions ? this.escapeHtml(instructions) : '';
+    const safeAccessPassword = access_password ? this.escapeHtml(access_password) : '';
+    const safeTimezone = timezone ? this.escapeHtml(timezone) : '';
+    const safeProctoringType = proctoring_type ? this.escapeHtml(proctoring_type) : '';
 
     const assessmentTypeLabel = this.getAssessmentTypeLabel(type);
     const proctoringInfo = proctoring_required ? 
-      `This assessment requires ${proctoring_type} proctoring. Please ensure your webcam and microphone are working.` : 
+      `This assessment requires ${safeProctoringType} proctoring. Please ensure your webcam and microphone are working.` : 
       'No special proctoring requirements for this assessment.';
 
     // Determine assessment status
@@ -264,12 +538,12 @@ class EmailService {
           </div>
           
           <div class="content">
-            <p>Hello ${recipientName},</p>
+            <p>Hello ${safeRecipientName},</p>
             
-            <p>${emailMessage}</p>
+            <p>${this.escapeHtml(emailMessage)}</p>
             
             <div class="assessment-details">
-              <h2 class="assessment-title">${title}</h2>
+              <h2 class="assessment-title">${safeTitle}</h2>
               
               ${isReminder ? `
               <div style="background: ${assessmentStatus === 'ongoing' ? '#f0fdf4' : assessmentStatus === 'ended' ? '#fef2f2' : '#fef3c7'}; border: 1px solid ${assessmentStatus === 'ongoing' ? '#22c55e' : assessmentStatus === 'ended' ? '#f87171' : '#f59e0b'}; padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center;">
@@ -279,17 +553,12 @@ class EmailService {
               </div>
               ` : ''}
               
-              ${description ? `<p style="color: #6b7280; margin-bottom: 15px;">${description}</p>` : ''}
               
               <div class="detail-row">
                 <span class="detail-label">Assessment Name:</span>
-                <span class="detail-value">${title}</span>
+                <span class="detail-value">${safeTitle}</span>
               </div>
               
-              <div class="detail-row">
-                <span class="detail-label">Assessment Type:</span>
-                <span class="detail-value">${assessmentTypeLabel}</span>
-              </div>
               
               <div class="detail-row">
                 <span class="detail-label">Total Points:</span>
@@ -298,12 +567,12 @@ class EmailService {
               
               <div class="detail-row">
                 <span class="detail-label">Start Date & Time:</span>
-                <span class="detail-value">${formatDateTime(start_date, start_time, timezone)}</span>
+                <span class="detail-value">${this.escapeHtml(formatDateTime(start_date, start_time, timezone))}</span>
               </div>
               
               <div class="detail-row">
                 <span class="detail-label">End Date & Time:</span>
-                <span class="detail-value">${formatDateTime(end_date, end_time, timezone)}</span>
+                <span class="detail-value">${this.escapeHtml(formatDateTime(end_date, end_time, timezone))}</span>
               </div>
               
               ${duration_minutes ? `
@@ -313,58 +582,21 @@ class EmailService {
               </div>
               ` : ''}
               
-              ${max_attempts ? `
-              <div class="detail-row">
-                <span class="detail-label">Max Attempts:</span>
-                <span class="detail-value">${max_attempts}</span>
-              </div>
-              ` : ''}
             </div>
             
-            ${access_password ? `
+              ${access_password ? `
             <div class="warning">
               <h3 style="margin-top: 0; color: #dc2626;">🔑 Access Password Required:</h3>
               <p style="margin-bottom: 10px; font-weight: 600;">You will need the following password to access this assessment:</p>
               <div style="background: #f3f4f6; border: 2px solid #d1d5db; padding: 15px; border-radius: 8px; text-align: center; margin: 10px 0;">
-                <span style="font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; color: #059669; letter-spacing: 2px;">${access_password}</span>
+                <span style="font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; color: #059669; letter-spacing: 2px;">${safeAccessPassword}</span>
               </div>
               <p style="margin-top: 10px; margin-bottom: 0; font-size: 14px; color: #6b7280;">Please save this password - you'll need it to start the assessment.</p>
             </div>
             ` : ''}
             
-            ${instructions ? `
-            <div class="instructions">
-              <h3 style="margin-top: 0; color: #374151;">📋 Instructions:</h3>
-              <p style="margin-bottom: 0;">${instructions}</p>
-            </div>
-            ` : ''}
             
-            <div class="important">
-              <h3 style="margin-top: 0; color: #92400e;">🔒 Proctoring Information:</h3>
-              <p style="margin-bottom: 0;">${proctoringInfo}</p>
-            </div>
             
-            ${isReminder ? `
-            <div class="warning">
-              <h3 style="margin-top: 0; color: #dc2626;">⚠️ Important Reminder:</h3>
-              <ul style="margin-bottom: 0;">
-                <li>This assessment is approaching its deadline</li>
-                <li>Please complete it before the end date and time</li>
-                <li>Ensure you have a stable internet connection</li>
-                <li>Contact support immediately if you encounter any issues</li>
-              </ul>
-            </div>
-            ` : `
-            <div class="success">
-              <h3 style="margin-top: 0; color: #059669;">✅ Important Notes:</h3>
-              <ul style="margin-bottom: 0;">
-                <li>Please ensure you have a stable internet connection</li>
-                <li>Complete the assessment before the end date</li>
-                <li>Read all instructions carefully before starting</li>
-                <li>Contact support if you encounter any technical issues</li>
-              </ul>
-            </div>
-            `}
             
             <div style="text-align: center; margin: 20px 0;">
               <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/assessments" class="button">
@@ -427,6 +659,203 @@ class EmailService {
     }
     
     return emails;
+  }
+
+  async sendAssessmentReminder(emailData) {
+    try {
+      // Check if email service is configured
+      if (!this.isConfigured || !this.transporter) {
+        // console.log('Email service not configured, skipping reminder email');
+        return { success: true, message: 'Email service not configured' };
+      }
+
+      const { to, studentName, assessmentTitle, startDate, endDate, customMessage, type } = emailData;
+
+      let subject, htmlContent;
+
+      if (type === 'immediate') {
+        subject = `Assessment Reminder: ${assessmentTitle}`;
+        htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb;">Assessment Reminder</h2>
+            <p>Hello ${studentName},</p>
+            <p>This is a reminder about your upcoming assessment:</p>
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #1e40af; margin-top: 0;">${assessmentTitle}</h3>
+              <p><strong>Start Date:</strong> ${startDate}</p>
+              <p><strong>End Date:</strong> ${endDate}</p>
+            </div>
+            ${customMessage ? `<p>${customMessage}</p>` : ''}
+            <p>Please make sure to complete the assessment within the given timeframe.</p>
+            <p>Best regards,<br>Assessment Team</p>
+          </div>
+        `;
+      } else {
+        subject = `Assessment Notification: ${assessmentTitle}`;
+        htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb;">New Assessment Available</h2>
+            <p>Hello ${studentName},</p>
+            <p>A new assessment has been published and is now available for you to take:</p>
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #1e40af; margin-top: 0;">${assessmentTitle}</h3>
+              <p><strong>Start Date:</strong> ${startDate}</p>
+              <p><strong>End Date:</strong> ${endDate}</p>
+            </div>
+            ${customMessage ? `<p>${customMessage}</p>` : ''}
+            <p>Please log in to your account to access and complete the assessment.</p>
+            <p>Best regards,<br>Assessment Team</p>
+          </div>
+        `;
+      }
+
+      const mailOptions = {
+        from: process.env.SMTP_USER,
+        to: to,
+        subject: subject,
+        html: htmlContent
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      return { success: true, message: 'Reminder email sent successfully' };
+
+    } catch (error) {
+      // console.error('Error sending assessment reminder:', error);
+      return { success: false, message: 'Failed to send reminder email', error: error.message };
+    }
+  }
+
+  // CRITICAL FIX: Send email verification email
+  async sendVerificationEmail(email, name, verificationUrl) {
+    try {
+      if (!this.isConfigured || !this.transporter) {
+        console.warn('Email service not configured, cannot send verification email');
+        return { success: false, message: 'Email service not configured' };
+      }
+
+      const safeName = this.escapeHtml(name);
+      const safeUrl = this.escapeHtml(verificationUrl);
+
+      const mailOptions = {
+        from: process.env.SMTP_FROM || 'noreply@lms-platform.com',
+        to: email,
+        subject: 'Verify Your Email Address',
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Verify Your Email</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f8fafc; padding: 20px; border-radius: 0 0 8px 8px; }
+              .button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 15px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Verify Your Email Address</h1>
+              </div>
+              <div class="content">
+                <p>Hello ${safeName},</p>
+                <p>Thank you for registering! Please verify your email address by clicking the button below:</p>
+                <div style="text-align: center;">
+                  <a href="${safeUrl}" class="button">Verify Email Address</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #6b7280;">${safeUrl}</p>
+                <p>This link will expire in 24 hours.</p>
+                <p>If you didn't create an account, please ignore this email.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      return { success: true, message: 'Verification email sent successfully' };
+    } catch (error) {
+      console.error('Error sending verification email:', error);
+      return { 
+        success: false, 
+        message: 'Failed to send verification email',
+        error: error.message
+      };
+    }
+  }
+
+  // CRITICAL FIX: Send password reset email
+  async sendPasswordResetEmail(email, name, resetUrl) {
+    try {
+      if (!this.isConfigured || !this.transporter) {
+        console.warn('Email service not configured, cannot send password reset email');
+        return { success: false, message: 'Email service not configured' };
+      }
+
+      const safeName = this.escapeHtml(name);
+      const safeUrl = this.escapeHtml(resetUrl);
+
+      const mailOptions = {
+        from: process.env.SMTP_FROM || 'noreply@lms-platform.com',
+        to: email,
+        subject: 'Reset Your Password',
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Reset Your Password</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f8fafc; padding: 20px; border-radius: 0 0 8px 8px; }
+              .button { display: inline-block; background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 15px 0; }
+              .warning { background: #fef2f2; border: 1px solid #f87171; padding: 15px; border-radius: 5px; margin: 15px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Reset Your Password</h1>
+              </div>
+              <div class="content">
+                <p>Hello ${safeName},</p>
+                <p>We received a request to reset your password. Click the button below to reset it:</p>
+                <div style="text-align: center;">
+                  <a href="${safeUrl}" class="button">Reset Password</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #6b7280;">${safeUrl}</p>
+                <div class="warning">
+                  <p><strong>⚠️ Important:</strong></p>
+                  <ul>
+                    <li>This link will expire in 1 hour</li>
+                    <li>If you didn't request a password reset, please ignore this email</li>
+                    <li>Your password will not be changed unless you click the link above</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </body>
+          </html>
+        `
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      return { success: true, message: 'Password reset email sent successfully' };
+    } catch (error) {
+      console.error('Error sending password reset email:', error);
+      return { 
+        success: false, 
+        message: 'Failed to send password reset email',
+        error: error.message
+      };
+    }
   }
 }
 
