@@ -4,11 +4,21 @@ import dotenv from 'dotenv';
 import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { testConnection } from '../backend/config/database.js';
-import cacheService from '../backend/services/cacheService.js';
 
 // Load environment variables
 dotenv.config();
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_DB_URL',
+  'JWT_SECRET',
+  'CSRF_SECRET',
+  'ENCRYPTION_KEY'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 const app = express();
 
@@ -110,61 +120,173 @@ app.use((req, res, next) => {
 
 // Health check endpoint with database status
 app.get('/health', async (req, res) => {
-  const dbStatus = await testConnection();
-  const cacheStats = cacheService.getStats();
-  
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    version: process.env.npm_package_version || '1.0.0',
-    database: dbStatus ? 'connected' : 'disconnected',
-    cache: cacheStats
-  });
+  try {
+    const { testConnection } = await import('../backend/config/database.js').catch(() => ({ testConnection: () => false }));
+    const cacheService = await import('../backend/services/cacheService.js').catch(() => ({ default: { getStats: () => ({}) } }));
+    
+    const dbStatus = await testConnection();
+    const cacheStats = cacheService.default?.getStats?.() || {};
+    
+    res.json({ 
+      status: missingEnvVars.length > 0 ? 'DEGRADED' : 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      version: process.env.npm_package_version || '1.0.0',
+      database: dbStatus ? 'connected' : 'disconnected',
+      cache: cacheStats,
+      missingEnvVars: missingEnvVars.length > 0 ? missingEnvVars : undefined
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Health check failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      missingEnvVars: missingEnvVars.length > 0 ? missingEnvVars : undefined
+    });
+  }
 });
 
 // API health check
 app.get('/api/health', async (req, res) => {
-  const dbStatus = await testConnection();
-  res.json({ 
-    status: 'OK', 
-    database: dbStatus ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
-  });
+  try {
+    const { testConnection } = await import('../backend/config/database.js').catch(() => ({ testConnection: () => false }));
+    const dbStatus = await testConnection();
+    res.json({ 
+      status: missingEnvVars.length > 0 ? 'DEGRADED' : 'OK', 
+      database: dbStatus ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+      missingEnvVars: missingEnvVars.length > 0 ? missingEnvVars : undefined
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Health check failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      missingEnvVars: missingEnvVars.length > 0 ? missingEnvVars : undefined
+    });
+  }
 });
 
-// Import and use routes
-import authRoutes from '../backend/routes/auth.js';
-import assessmentRoutes from '../backend/routes/assessments.js';
-import questionBankRoutes from '../backend/routes/questionBank.js';
-import userManagementRoutes from '../backend/routes/userManagement.js';
-import collegeRoutes from '../backend/routes/colleges.js';
-import analyticsRoutes from '../backend/routes/analytics.js';
-import emailRoutes from '../backend/routes/email.js';
-import codingRoutes from '../backend/routes/coding.js';
-import superAdminRoutes from '../backend/routes/superAdmin.js';
-import batchRoutes from '../backend/routes/batches.js';
+// Import and use routes with error handling
+let routesLoaded = false;
 
-app.use('/api/auth', authRoutes);
-app.use('/api/assessments', assessmentRoutes);
-app.use('/api/question-bank', questionBankRoutes);
-app.use('/api/users', userManagementRoutes);
-app.use('/api/colleges', collegeRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/email', emailRoutes);
-app.use('/api/coding', codingRoutes);
-app.use('/api/super-admin', superAdminRoutes);
-app.use('/api/batches', batchRoutes);
+async function loadRoutes() {
+  if (routesLoaded) return;
+  
+  try {
+    // Check for missing environment variables before loading routes
+    if (missingEnvVars.length > 0) {
+      console.error('Missing required environment variables:', missingEnvVars);
+      // Don't throw - allow routes to load but they'll fail gracefully
+    }
+
+    const [
+      authRoutes,
+      assessmentRoutes,
+      questionBankRoutes,
+      userManagementRoutes,
+      collegeRoutes,
+      analyticsRoutes,
+      emailRoutes,
+      codingRoutes,
+      superAdminRoutes,
+      batchRoutes
+    ] = await Promise.all([
+      import('../backend/routes/auth.js').catch(err => {
+        console.error('Failed to load auth routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/assessments.js').catch(err => {
+        console.error('Failed to load assessment routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/questionBank.js').catch(err => {
+        console.error('Failed to load questionBank routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/userManagement.js').catch(err => {
+        console.error('Failed to load userManagement routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/colleges.js').catch(err => {
+        console.error('Failed to load college routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/analytics.js').catch(err => {
+        console.error('Failed to load analytics routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/email.js').catch(err => {
+        console.error('Failed to load email routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/coding.js').catch(err => {
+        console.error('Failed to load coding routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/superAdmin.js').catch(err => {
+        console.error('Failed to load superAdmin routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      }),
+      import('../backend/routes/batches.js').catch(err => {
+        console.error('Failed to load batch routes:', err.message);
+        return { default: (req, res) => res.status(500).json({ success: false, message: 'Route not available - check server logs' }) };
+      })
+    ]);
+
+    app.use('/api/auth', authRoutes.default);
+    app.use('/api/assessments', assessmentRoutes.default);
+    app.use('/api/question-bank', questionBankRoutes.default);
+    app.use('/api/users', userManagementRoutes.default);
+    app.use('/api/colleges', collegeRoutes.default);
+    app.use('/api/analytics', analyticsRoutes.default);
+    app.use('/api/email', emailRoutes.default);
+    app.use('/api/coding', codingRoutes.default);
+    app.use('/api/super-admin', superAdminRoutes.default);
+    app.use('/api/batches', batchRoutes.default);
+    
+    routesLoaded = true;
+  } catch (error) {
+    console.error('Critical error loading routes:', error);
+    // Add a catch-all route that provides helpful error message
+    app.use('/api/*', (req, res) => {
+      res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+        error: 'Failed to initialize routes. Please check server logs and environment variables.',
+        missingEnvVars: missingEnvVars.length > 0 ? missingEnvVars : undefined
+      });
+    });
+  }
+}
+
+// Load routes asynchronously
+loadRoutes();
 
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Error:', error);
-  res.status(500).json({ 
-    success: false, 
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? error.message : undefined
-  });
+  console.error('Stack:', error.stack);
+  
+  // Check if it's a missing env var error
+  if (missingEnvVars.length > 0 && !res.headersSent) {
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Server configuration error',
+      error: 'Missing required environment variables',
+      missingEnvVars: missingEnvVars,
+      hint: 'Please set all required environment variables in Vercel project settings'
+    });
+  }
+  
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });
 
 // 404 handler
@@ -177,6 +299,22 @@ app.use('*', (req, res) => {
 });
 
 // Export handler for Vercel serverless functions
-export default (req, res) => {
+export default async (req, res) => {
+  // Ensure routes are loaded before handling request
+  if (!routesLoaded) {
+    await loadRoutes();
+  }
+  
+  // If critical env vars are missing, return helpful error
+  if (missingEnvVars.length > 0 && !req.path.startsWith('/health')) {
+    return res.status(500).json({
+      success: false,
+      message: 'Server configuration error',
+      error: 'Missing required environment variables',
+      missingEnvVars: missingEnvVars,
+      hint: 'Please configure all required environment variables in Vercel project settings. See VERCEL_ENV_SETUP.md for details.'
+    });
+  }
+  
   return app(req, res);
 };
