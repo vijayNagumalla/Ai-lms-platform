@@ -1677,19 +1677,47 @@ export const getAssessmentStudentSubmissions = async (req, res) => {
 };
 
 // Get public stats for landing page
+// Wrapped in try-catch to ensure it never throws unhandled errors
 export const getPublicStats = async (req, res) => {
-  try {
-    // Ensure JSON response header is set
+  // Set JSON header immediately
+  if (!res.headersSent) {
     res.setHeader('Content-Type', 'application/json');
+  }
+  
+  // Default fallback response
+  const fallbackResponse = {
+    success: true,
+    data: {
+      activeUsers: 0,
+      institutions: 0,
+      assessments: 0,
+      submissions: 0
+    }
+  };
+  
+  try {
+    console.log('[PublicStats] Handler started');
     
-    console.log('[PublicStats] Starting to fetch platform stats...');
-    const stats = await getPlatformStatsSnapshot();
-    console.log('[PublicStats] Stats fetched:', stats);
+    // Safely get stats with timeout protection
+    let stats;
+    try {
+      stats = await Promise.race([
+        getPlatformStatsSnapshot(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Stats fetch timeout')), 10000)
+        )
+      ]);
+    } catch (statsError) {
+      console.error('[PublicStats] Error fetching stats:', statsError);
+      stats = null;
+    }
     
-    // Ensure we have valid stats object
+    console.log('[PublicStats] Stats received:', stats);
+    
+    // Validate stats object
     if (!stats || typeof stats !== 'object') {
-      console.error('[PublicStats] Invalid stats object received:', stats);
-      throw new Error('Invalid stats returned from getPlatformStatsSnapshot');
+      console.warn('[PublicStats] Invalid stats, using fallback');
+      return res.json(fallbackResponse);
     }
     
     const {
@@ -1709,31 +1737,20 @@ export const getPublicStats = async (req, res) => {
       }
     };
     
-    console.log('[PublicStats] Sending response:', responseData);
-    res.json(responseData);
+    console.log('[PublicStats] Sending success response');
+    return res.json(responseData);
+    
   } catch (error) {
-    console.error('[PublicStats] Error occurred:', error);
-    console.error('[PublicStats] Error message:', error.message);
-    console.error('[PublicStats] Error stack:', error.stack);
+    // Ultimate fallback - ensure we always return something
+    console.error('[PublicStats] Critical error:', error);
+    console.error('[PublicStats] Error type:', error?.constructor?.name);
+    console.error('[PublicStats] Error message:', error?.message);
     
-    // Ensure JSON response header is set even on error
     if (!res.headersSent) {
-      res.setHeader('Content-Type', 'application/json');
+      console.log('[PublicStats] Sending fallback response after error');
+      return res.json(fallbackResponse);
+    } else {
+      console.error('[PublicStats] Response already sent, cannot send fallback');
     }
-    
-    // Return default values instead of error for public endpoint
-    // This ensures the landing page still loads even if stats fail
-    const fallbackResponse = {
-      success: true,
-      data: {
-        activeUsers: 0,
-        institutions: 0,
-        assessments: 0,
-        submissions: 0
-      }
-    };
-    
-    console.log('[PublicStats] Sending fallback response:', fallbackResponse);
-    res.json(fallbackResponse);
   }
 };

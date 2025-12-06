@@ -1,5 +1,4 @@
 import { pool } from '../config/database.js';
-import { supabase } from '../config/database.js';
 
 /**
  * Fetches the key platform-wide stats that power the Super Admin dashboard
@@ -8,6 +7,35 @@ import { supabase } from '../config/database.js';
  */
 export const getPlatformStatsSnapshot = async () => {
   try {
+    // Dynamically import supabase to ensure it's initialized
+    let supabase;
+    try {
+      const dbModule = await import('../config/database.js');
+      supabase = dbModule.supabase;
+      
+      if (!supabase) {
+        console.error('[PlatformStats] Supabase client not available');
+        return {
+          activeUsers: 0,
+          totalColleges: 0,
+          totalDepartments: 0,
+          totalAssessments: 0,
+          totalSubmissions: 0,
+        };
+      }
+    } catch (importError) {
+      console.error('[PlatformStats] Failed to import database module:', importError);
+      return {
+        activeUsers: 0,
+        totalColleges: 0,
+        totalDepartments: 0,
+        totalAssessments: 0,
+        totalSubmissions: 0,
+      };
+    }
+
+    console.log('[PlatformStats] Starting to fetch stats with Supabase...');
+    
     // Use direct Supabase queries for better reliability
     // This avoids SQL parsing issues with boolean values
     const [
@@ -102,17 +130,22 @@ export const getPlatformStatsSnapshot = async () => {
         }),
     ]);
 
-    return {
+    const stats = {
       activeUsers: userResult?.count ?? 0,
       totalColleges: collegeResult?.count ?? 0,
       totalDepartments: departmentResult?.count ?? 0,
       totalAssessments: assessmentResult?.count ?? 0,
       totalSubmissions: submissionResult?.count ?? 0,
     };
+    
+    console.log('[PlatformStats] Successfully fetched stats:', stats);
+    return stats;
   } catch (error) {
-    console.error('Error in getPlatformStatsSnapshot:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error message:', error.message);
+    console.error('[PlatformStats] Error in getPlatformStatsSnapshot:', error);
+    console.error('[PlatformStats] Error stack:', error.stack);
+    console.error('[PlatformStats] Error message:', error.message);
+    console.error('[PlatformStats] Error name:', error.name);
+    
     // Return default values instead of throwing
     return {
       activeUsers: 0,

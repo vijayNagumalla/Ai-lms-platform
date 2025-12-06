@@ -33,14 +33,20 @@ router.get('/test', testAnalyticsConnection);
 
 // Public stats endpoint with error handling to ensure JSON response
 router.get('/public-stats', async (req, res) => {
+  // Ensure response is always JSON
+  res.setHeader('Content-Type', 'application/json');
+  
   try {
-    // Ensure response is always JSON
-    res.setHeader('Content-Type', 'application/json');
+    console.log('[PublicStats Route] Handler called');
     await getPublicStats(req, res);
   } catch (error) {
-    console.error('Error in public-stats route:', error);
+    console.error('[PublicStats Route] Error in route handler:', error);
+    console.error('[PublicStats Route] Error message:', error.message);
+    console.error('[PublicStats Route] Error stack:', error.stack);
+    
     // Ensure we return JSON even if handler fails
     if (!res.headersSent) {
+      console.log('[PublicStats Route] Sending fallback response');
       res.status(200).json({
         success: true,
         data: {
@@ -50,6 +56,8 @@ router.get('/public-stats', async (req, res) => {
           submissions: 0
         }
       });
+    } else {
+      console.error('[PublicStats Route] Response already sent, cannot send fallback');
     }
   }
 });
