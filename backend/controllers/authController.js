@@ -204,6 +204,11 @@ export const register = async (req, res) => {
 
 // Login user
 export const login = async (req, res) => {
+  // Ensure JSON response header is set immediately
+  if (!res.headersSent) {
+    res.setHeader('Content-Type', 'application/json');
+  }
+  
   try {
     const { email, password } = req.body;
 
@@ -216,14 +221,27 @@ export const login = async (req, res) => {
     }
 
     // CRITICAL FIX: Ensure login_attempts table exists
-    await ensureLoginAttemptsTable();
+    try {
+      await ensureLoginAttemptsTable();
+    } catch (tableError) {
+      console.error('[Login] Error ensuring login_attempts table:', tableError);
+      // Continue anyway - table might already exist
+    }
 
     // OPTIMIZATION: Add LIMIT 1 and ensure email column is indexed
     // Find user by email (optimized query)
-    const [users] = await pool.execute(
-      'SELECT id, email, password, name, role, college_id, department, student_id, phone, avatar_url, country, is_active, email_verified FROM users WHERE email = ? LIMIT 1',
-      [email]
-    );
+    let users;
+    try {
+      const result = await pool.execute(
+        'SELECT id, email, password, name, role, college_id, department, student_id, phone, avatar_url, country, is_active, email_verified FROM users WHERE email = ? LIMIT 1',
+        [email]
+      );
+      // Handle [rows, fields] format
+      users = Array.isArray(result) && result.length > 0 ? result[0] : [];
+    } catch (dbError) {
+      console.error('[Login] Database error fetching user:', dbError);
+      throw new Error('Database connection error');
+    }
 
     if (users.length === 0) {
       // CRITICAL FIX: Track failed login attempt even if user doesn't exist (prevent user enumeration)
@@ -381,11 +399,22 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     // Login error - log the actual error for debugging
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    console.error('[Login] Error occurred:', error);
+    console.error('[Login] Error message:', error.message);
+    console.error('[Login] Error stack:', error.stack);
+    console.error('[Login] Error name:', error.name);
+    
+    // Ensure JSON response header is set even on error
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    } else {
+      console.error('[Login] Response already sent, cannot send error response');
+    }
   }
 };
 

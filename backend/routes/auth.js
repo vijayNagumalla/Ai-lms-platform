@@ -58,7 +58,33 @@ router.use(sanitizeInput);
 
 // Public routes with rate limiting and validation
 router.post('/register', authLimiter, ...authValidations.register, register);
-router.post('/login', loginLimiter, ...authValidations.login, login);
+
+// Login route with comprehensive error handling
+router.post('/login', loginLimiter, ...authValidations.login, async (req, res, next) => {
+  // Ensure JSON response header is set
+  res.setHeader('Content-Type', 'application/json');
+  
+  try {
+    console.log('[Login Route] Handler called');
+    await login(req, res);
+  } catch (error) {
+    console.error('[Login Route] Error in route handler:', error);
+    console.error('[Login Route] Error message:', error.message);
+    console.error('[Login Route] Error stack:', error.stack);
+    
+    // Ensure we return JSON even if handler fails
+    if (!res.headersSent) {
+      console.log('[Login Route] Sending fallback error response');
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    } else {
+      console.error('[Login Route] Response already sent, cannot send fallback');
+    }
+  }
+});
 
 // CRITICAL FIX: Email verification and password reset routes with validation
 // Support both GET (for direct email links) and POST (for API calls)
