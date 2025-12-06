@@ -16,18 +16,22 @@ export const getApiBaseUrl = () => {
 
   const isBrowser = typeof window !== 'undefined';
 
-  if (import.meta.env.PROD && isBrowser) {
+  // Check if we're in production (either via env or by checking if we're not on localhost)
+  const isProduction = import.meta.env.PROD || 
+    (isBrowser && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1'));
+
+  if (isProduction && isBrowser) {
     // On Vercel/Supabase deployments the API shares the same host
-    const { origin } = window.location;
-    return origin ? `${origin}/api` : '/api';
+    // Use relative path for same-origin requests
+    return '/api';
   }
 
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV || (isBrowser && window.location.hostname.includes('localhost'))) {
     // Local dev server fallback
     return 'http://localhost:5000/api';
   }
 
-  // Generic relative fallback (SSR/build-time)
+  // Generic relative fallback (SSR/build-time or production)
   return '/api';
 };
 
